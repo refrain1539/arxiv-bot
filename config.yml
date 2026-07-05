@@ -13,7 +13,7 @@ score_threshold: 6
 max_papers: 8
 
 # 該当する論文が0件の日にも通知するか
-notify_when_empty: true
+notify_when_empty: false
 
 # LINE通知が成功した場合でも、追加でメールも送るか
 always_email: false
