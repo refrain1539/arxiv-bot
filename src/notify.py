@@ -41,8 +41,10 @@ def build_line_text(papers, issue_url, date_str):
 
 for i, p in enumerate(papers, start=1):
         abstract_full = p.get("abstract_ja") or ""
+        authors = ", ".join(p.get("authors", []))
         block = (
             f"[{i}] {p['title']}\n"
+            f"著者: {authors}\n"
             f"★{p.get('score', 0)} {p.get('one_liner', '')}\n"
             f"{abstract_full}\n"
             f"{p['url']}\n\n"
