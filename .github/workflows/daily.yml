@@ -1,4 +1,4 @@
-zname: daily-arxiv
+name: daily-arxiv
 
 # 毎朝 7:00 JST (= 22:00 UTC) に自動実行するワークフロー。
 # GitHub Actions の schedule は数十分遅延することがあります(公式仕様)。
