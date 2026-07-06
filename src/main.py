@@ -14,6 +14,13 @@ arXiv hep-th 論文推薦Bot のエントリポイント。
 ログ出力のみで動作確認できる(テスト用)。
 """
 
+import sys
+
+# デバッグ用: Pythonがこのファイルを実際に実行しているかを確認するための強制出力。
+# これが表示されない場合、コードの問題ではなくログ表示側の問題と判断できる。
+print("[DEBUG] main.py の実行を開始しました", flush=True)
+sys.stdout.flush()
+
 import json
 import os
 from datetime import datetime, timedelta, timezone
