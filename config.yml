@@ -33,6 +33,7 @@ always_email: false
 # ヒットした論文はGeminiのスコアに関係なく必ず通知されます。
 watch_authors:
   - "Takayanagi"
+  - "Maldacena"
   # ここに追記してください(例: - "Maldacena")
 
 # 通知するカテゴリ(judge_translate.pyが4段階で分類します)。
