@@ -39,12 +39,12 @@ def build_line_text(papers, issue_url, date_str):
     used = 0
     truncated = False
 
-    for i, p in enumerate(papers, start=1):
-        abstract_preview = (p.get("abstract_ja") or "")[:200]
+for i, p in enumerate(papers, start=1):
+        abstract_full = p.get("abstract_ja") or ""
         block = (
             f"[{i}] {p['title']}\n"
             f"★{p.get('score', 0)} {p.get('one_liner', '')}\n"
-            f"{abstract_preview}…\n"
+            f"{abstract_full}\n"
             f"{p['url']}\n\n"
         )
         if used + len(block) > budget:
