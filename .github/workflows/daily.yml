@@ -1,4 +1,4 @@
-name: daily-arxiv
+zname: daily-arxiv
 
 # 毎朝 7:00 JST (= 22:00 UTC) に自動実行するワークフロー。
 # GitHub Actions の schedule は数十分遅延することがあります(公式仕様)。
@@ -37,6 +37,7 @@ jobs:
 
       - name: Botを実行
         env:
+          PYTHONUNBUFFERED: "1"
           # 必須: Gemini APIキー(GitHub Secretsに登録してください)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 任意: モデル名を変更したい場合のみSecretsに登録(未設定ならgemini-2.5-flash)
