@@ -39,7 +39,7 @@ def build_line_text(papers, issue_url, date_str):
     used = 0
     truncated = False
 
-for i, p in enumerate(papers, start=1):
+    for i, p in enumerate(papers, start=1):
         abstract_full = p.get("abstract_ja") or ""
         authors = ", ".join(p.get("authors", []))
         block = (
