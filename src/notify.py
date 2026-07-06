@@ -68,9 +68,11 @@ def build_email_html(papers, issue_url, date_str):
     if not papers:
         rows.append("<p>本日は該当する論文がありませんでした。</p>")
     for i, p in enumerate(papers, start=1):
+        authors = ", ".join(p.get("authors", []))
         rows.append(
             f"""
             <h3>[{i}] <a href="{p['url']}">{p['title']}</a></h3>
+            <p>著者: {authors}</p>
             <p>スコア: {p.get('score', 0)}/10 ・ {p.get('one_liner', '')}</p>
             <p style="white-space: pre-wrap;">{p.get('abstract_ja', '')}</p>
             <hr/>
