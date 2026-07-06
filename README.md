@@ -7,9 +7,61 @@ Gemini APIで興味に合うものだけを選別・日本語訳し、LINEまた
 ## できること
 
 - arXiv (hep-th / gr-qc / quant-ph) の新着論文を毎朝チェック
-- Gemini APIが興味プロファイルに沿って関連度をスコア付け(0-10点)
-- 閾値以上の論文だけをLINE・メールで通知(アブストラクトは日本語訳つき)
+- Gemini APIが研究プロファイルに沿って関連度をスコア付け(0-10点)
+- 論文を4段階(must_read / worth_reading / abstract_only / ignore)に分類し、
+  段階に応じた形式でLINE・メールに通知(アブストラクトは日本語訳つき)
+- 著者ウォッチリストに登録した著者の新着論文は、スコアに関係なく必ず通知(🔔著者アラート)
+- must_read論文にはBibTeX entryを自動生成し、Issueに併記
 - GitHub Issueのコメントで「興味あり/なし」をフィードバックすると、翌朝以降の判定精度に反映される
+
+## 新機能の使い方
+
+### 著者ウォッチリスト(watch_authors)
+
+`config.yml` の `watch_authors` に監視したい著者の姓を追記すると、その著者が含まれる
+新着論文はGeminiのスコアに関係なく必ず通知されます(LINE・Issueとも先頭に
+`🔔 著者アラート: <著者名>` と表示されます)。
+
+```yaml
+watch_authors:
+  - "Takayanagi"
+  - "Maldacena"
+```
+
+大文字小文字を区別しない部分一致なので、フルネームでなくても構いません。
+
+### 4段階分類(notify_categories)
+
+Geminiは各論文を以下の4段階に分類します。
+
+| カテゴリ | 意味 |
+|---|---|
+| `must_read` | 現在の研究テーマに直接関係。当日中に読むべき |
+| `worth_reading` | 関連分野で参考になる可能性がある。今週中に目を通す価値あり |
+| `abstract_only` | 分野動向として要約だけ把握すれば十分 |
+| `ignore` | 関連なし |
+
+`config.yml` の `notify_categories` で、LINE・メールに通知するカテゴリを選べます
+(GitHub Issueには `ignore` 以外の全カテゴリが常に記録されます)。
+
+```yaml
+notify_categories:
+  - must_read
+  - worth_reading
+```
+
+LINEでは `must_read` は詳細(タイトル和訳・著者・理由・リンク)、`worth_reading` は
+簡易表示(タイトル和訳・スコア・リンク)、`abstract_only` は件数のみの表示になります。
+
+### 研究プロファイル(data/my_profile.md)
+
+`data/my_profile.md` を編集すると、Geminiの関連度判定がこのファイルの内容を最優先で
+参照するようになります(`config.yml` の `interest_profile` はこのファイルが無い場合の
+フォールバックです)。
+
+編集方法: `data/my_profile.md` をテキストエディタで開き、`<...>` のプレースホルダー部分に
+現在の研究テーマ・注目している論文・興味が薄い分野などを具体的に書き込んでください。
+書けば書くほど判定精度が上がります(ただし先頭4000字を超えた部分は自動的に切り詰められます)。
 
 ## セットアップ手順
 
@@ -55,7 +107,10 @@ LINE・メールのどちらか一方は必ず設定してください(両方未
 
 ### 6. config.yml を編集する(任意)
 
-`config.yml` に興味プロファイルやスコア閾値などの設定があります。自分の興味に合わせて書き換えてください。
+`config.yml` に研究プロファイル・スコア閾値・著者ウォッチリスト(`watch_authors`)・
+通知カテゴリ(`notify_categories`)などの設定があります。自分の興味に合わせて書き換えてください。
+より詳しい研究プロファイルを設定したい場合は `data/my_profile.md` を編集してください
+(上記「新機能の使い方」を参照)。
 
 ### 7. 動作確認
 
@@ -80,13 +135,16 @@ arxiv-bot/
 ├── .github/workflows/daily.yml   # 毎朝の定期実行ワークフロー
 ├── src/
 │   ├── main.py                   # エントリポイント
-│   ├── arxiv_fetch.py            # arXiv API から新着取得
-│   ├── judge_translate.py        # Gemini で選別+翻訳
+│   ├── arxiv_fetch.py            # arXiv API から新着取得・著者ウォッチリスト照合
+│   ├── judge_translate.py        # Gemini で4段階分類+翻訳(研究プロファイル注入)
+│   ├── bibtex.py                 # must_read論文のBibTeX entry組み立て
 │   ├── feedback.py               # GitHub Issue からフィードバック回収・反映
 │   └── notify.py                 # LINE送信 / メール送信
 ├── data/
 │   ├── seen_ids.json             # 通知済み論文ID(重複防止)
-│   └── feedback.json             # 蓄積されたフィードバック
+│   ├── feedback.json             # 蓄積されたフィードバック
+│   └── my_profile.md             # 研究プロファイル(ユーザーが編集)
+├── tests/                        # ユニットテスト(unittest)
 ├── config.yml                    # ユーザーが編集する設定ファイル
 ├── requirements.txt
 └── README.md
