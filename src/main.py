@@ -94,9 +94,12 @@ def main():
         print("[main] GITHUB_REPOSITORY / GITHUB_TOKEN が未設定のため、フィードバック回収をスキップします")
 
     # --- 2. arXiv新着取得 ---
-    seen_ids = load_seen_ids()
+       seen_ids = load_seen_ids()
     try:
-        papers = fetch_recent_papers(config.get("categories", ["hep-th"]), hours=48)
+        papers = fetch_recent_papers(
+            config.get("categories", ["hep-th"]),
+            hours=config.get("lookback_hours", 96),
+        )
     except Exception as e:
         print(f"[main] arXiv取得でエラーが発生しました: {e}")
         papers = []
