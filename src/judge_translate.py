@@ -115,7 +115,7 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
     return None
 
 
-def judge_and_translate_papers(papers, interest_profile, feedback_list, api_key, model, score_threshold, sleep_sec=4):
+def judge_and_translate_papers(papers, interest_profile, feedback_list, api_key, model, score_threshold, sleep_sec=7):
     """
     論文リストを1件ずつGeminiに投げ、スコア・翻訳・一言コメントを付与する。
     失敗した論文はスコア0として扱い、全体の処理は止めない。
