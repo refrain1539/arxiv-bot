@@ -5,6 +5,8 @@
 
 # 監視対象の arXiv カテゴリ
 categories: ["hep-th", "gr-qc", "quant-ph"]
+lookback_hours: 96        # arXiv取得の遡り時間(時間単位)。土日明けなど新着が少ない時期に備えて広めに取る
+score_threshold: 6
 
 # arXivから何時間以内に投稿された論文を取得対象とするか
 # arXivのAPI検索インデックスには反映まで数時間〜1日程度のラグがあり、
