@@ -81,6 +81,27 @@ def fetch_recent_papers(categories, hours=48, max_results=200, retries=3):
     return recent
 
 
+def tag_author_alerts(papers, watch_authors):
+    """
+    watch_authors (config.yml) に部分一致(大文字小文字無視)する著者を含む論文に
+    author_alert=True と matched_author を付与する。watch_authorsが未設定・空の場合は
+    何もしない(後方互換)。LLMを介さない決定的な処理。
+    """
+    needles = [w.strip().lower() for w in (watch_authors or []) if w and w.strip()]
+    if not needles:
+        return papers
+
+    for p in papers:
+        for author in p.get("authors", []):
+            author_lower = author.lower()
+            if any(needle in author_lower for needle in needles):
+                p["author_alert"] = True
+                p["matched_author"] = author
+                break
+
+    return papers
+
+
 def _parse_atom(xml_text):
     """Atom XML をパースして論文情報の辞書リストを返す。壊れたentryはスキップする。"""
     papers = []
