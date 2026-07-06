@@ -1,13 +1,16 @@
 """
-Gemini APIを使って、論文の関連度判定・日本語翻訳・一言要約を行うモジュール。
+Gemini APIを使って、論文の関連度判定・日本語翻訳・4段階分類を行うモジュール。
 
 - REST APIを直接叩く (https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent)
 - 1論文につき1リクエストとし、リクエスト間にsleepを入れて無料枠のレート制限(RPM)を超えないようにする
 - 429 (レート制限) の場合は指数バックオフで最大3回リトライする
-- レスポンスのJSONパースに失敗した論文は、スコア0として扱い処理を止めない
+- レスポンスのJSONパースに失敗した論文は、スコア0・category="ignore"として扱い処理を止めない
+- data/my_profile.md が存在する場合は、config.yml の interest_profile より優先して
+  プロンプトに注入する(研究プロファイル注入。存在しなければ従来通りinterest_profileを使う)
 """
 
 import json
+import os
 import re
 import time
 
@@ -15,8 +18,45 @@ import requests
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MY_PROFILE_PATH = os.path.join(BASE_DIR, "data", "my_profile.md")
+MY_PROFILE_MAX_CHARS = 4000
+
+VALID_CATEGORIES = {"must_read", "worth_reading", "abstract_only", "ignore"}
+CATEGORY_ORDER = {"must_read": 0, "worth_reading": 1, "abstract_only": 2, "ignore": 3}
+
 # パース失敗時などに使うデフォルト値
-DEFAULT_JUDGEMENT = {"score": 0, "reason": "判定に失敗しました", "abstract_ja": "", "one_liner": ""}
+DEFAULT_JUDGEMENT = {
+    "score": 0,
+    "category": "ignore",
+    "reason": "判定に失敗しました",
+    "title_ja": "",
+    "abstract_ja": "",
+    "one_liner": "",
+    "check_points": "",
+    "suggested_action": "",
+}
+
+
+def load_research_profile(fallback_profile):
+    """
+    data/my_profile.md があればそちらを読み込み(先頭4000字に切り詰め)、
+    無ければ config.yml の interest_profile (fallback_profile) を返す。
+    """
+    try:
+        with open(MY_PROFILE_PATH, "r", encoding="utf-8") as f:
+            text = f.read()
+    except FileNotFoundError:
+        return fallback_profile
+
+    if len(text) > MY_PROFILE_MAX_CHARS:
+        print(
+            f"[judge_translate] data/my_profile.md が{MY_PROFILE_MAX_CHARS}字を超えているため、"
+            f"先頭{MY_PROFILE_MAX_CHARS}字に切り詰めます(元の長さ: {len(text)}字)"
+        )
+        text = text[:MY_PROFILE_MAX_CHARS]
+
+    return text
 
 
 def build_feedback_context(feedback_list, limit=15):
@@ -44,13 +84,15 @@ def build_feedback_context(feedback_list, limit=15):
     return "\n".join(lines)
 
 
-def _build_prompt(paper, interest_profile, feedback_context, score_threshold):
+def _build_prompt(paper, research_profile, feedback_context, score_threshold):
     authors = ", ".join(paper.get("authors", []))
     return f"""あなたは理論物理学(素粒子論・重力理論)の専門家アシスタントです。
-以下の興味プロファイルを持つ研究者に、次の論文が関連するかどうかを判定してください。
+以下の研究プロファイルを持つ研究者に、次の論文が関連するかどうかを判定してください。
+「現在の研究テーマ」との関連を最重視し、reasonフィールドではプロファイルのどの項目と
+関係するかを具体的に明示してください。
 
-# 興味プロファイル
-{interest_profile}
+# 研究プロファイル
+{research_profile}
 
 # 過去のフィードバック傾向(これも考慮してスコアを付けよ)
 {feedback_context}
@@ -63,15 +105,25 @@ def _build_prompt(paper, interest_profile, feedback_context, score_threshold):
 {paper['abstract']}
 
 # 指示
-1. 興味プロファイルとの関連度を 0〜10 の整数でスコア付けせよ(10が最も関連が高い)。
-2. スコアが {score_threshold} 未満の場合、abstract_ja は空文字列("")で構わない(翻訳の手間を省くため)。
-   スコアが {score_threshold} 以上の場合は、アブストラクト全文を自然な日本語に翻訳せよ。
+1. 研究プロファイルとの関連度を 0〜10 の整数でスコア付けせよ(10が最も関連が高い)。
+2. 以下の4段階のいずれかにcategoryを分類せよ:
+   - "must_read": 現在の研究テーマに直接関係する。当日中に読むべき。
+   - "worth_reading": 関連分野で手法や結果が参考になる可能性がある。今週中に目を通す価値がある。
+   - "abstract_only": 分野の動向として要約だけ把握すれば十分。
+   - "ignore": 関連なし。
+3. title_ja にはタイトルの自然な日本語訳を書け。
+4. category が "must_read" または "worth_reading" の場合のみ、アブストラクト全文を
+   自然な日本語に翻訳して abstract_ja に書け。それ以外は abstract_ja は空文字列("")でよい。
    ただし物理の専門用語(replica trick, bulk reconstruction, quantum extremal surface等)は
    無理に和訳せず、慣用的なカタカナまたは英語のまま残してよい。
-3. one_liner には、この論文の内容を30字程度で要約した日本語を書け。
-4. 以下のJSON形式のみを出力せよ。説明文やコードフェンス(```)は不要。
+5. one_liner には、この論文の内容を30字程度で要約した日本語を書け。
+6. check_points と suggested_action は category が "must_read" または "worth_reading" の
+   場合のみ必須とし、それ以外は空文字列("")でよい。
+   - check_points: 読む際に特に確認すべき箇所(セクション名、数式、前提条件など)
+   - suggested_action: 読むために取るべき具体的な行動(所要時間の目安を含めてよい)
+7. 以下のJSON形式のみを出力せよ。説明文やコードフェンス(```)は不要。
 
-{{"score": <0から10の整数>, "reason": "<1文の判定理由(日本語)>", "abstract_ja": "<アブストラクト全訳、または空文字列>", "one_liner": "<30字程度の日本語要約>"}}
+{{"score": <0から10の整数>, "category": "<must_read|worth_reading|abstract_only|ignore>", "title_ja": "<タイトルの日本語訳>", "reason": "<1文の判定理由(日本語)。プロファイルのどの項目と関係するかを含める>", "abstract_ja": "<アブストラクト全訳、または空文字列>", "one_liner": "<30字程度の日本語要約>", "check_points": "<確認すべき箇所、または空文字列>", "suggested_action": "<推奨される行動、または空文字列>"}}
 """
 
 
@@ -87,6 +139,17 @@ def _extract_json(text):
         if first != -1 and last != -1:
             text = text[first : last + 1]
     return json.loads(text)
+
+
+def _resolve_category(parsed, score, score_threshold):
+    """
+    categoryが欠落・不正値の場合のフォールバック:
+    既存のスコア閾値ロジックで worth_reading(スコア>=閾値) / ignore に振り分ける。
+    """
+    category = parsed.get("category")
+    if category in VALID_CATEGORIES:
+        return category
+    return "worth_reading" if score >= score_threshold else "ignore"
 
 
 def _call_gemini_api(prompt, api_key, model, max_retries=3):
@@ -115,31 +178,49 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
     return None
 
 
+def parse_judgement(text, score_threshold):
+    """
+    Gemini応答テキストを解析し、判定結果の辞書を返す。
+    パース失敗やcategory不正時はフォールバックする(ユニットテスト可能なように分離)。
+    """
+    judgement = dict(DEFAULT_JUDGEMENT)
+    if text is None:
+        return judgement
+
+    parsed = _extract_json(text)
+    score = int(parsed.get("score", 0))
+    judgement["score"] = score
+    judgement["category"] = _resolve_category(parsed, score, score_threshold)
+    judgement["reason"] = str(parsed.get("reason", ""))
+    judgement["title_ja"] = str(parsed.get("title_ja", ""))
+    judgement["abstract_ja"] = str(parsed.get("abstract_ja", ""))
+    judgement["one_liner"] = str(parsed.get("one_liner", ""))
+    judgement["check_points"] = str(parsed.get("check_points", ""))
+    judgement["suggested_action"] = str(parsed.get("suggested_action", ""))
+    return judgement
+
+
 def judge_and_translate_papers(papers, interest_profile, feedback_list, api_key, model, score_threshold, sleep_sec=7):
     """
-    論文リストを1件ずつGeminiに投げ、スコア・翻訳・一言コメントを付与する。
-    失敗した論文はスコア0として扱い、全体の処理は止めない。
+    論文リストを1件ずつGeminiに投げ、スコア・4段階分類・翻訳・チェック点・推奨行動を付与する。
+    失敗した論文はcategory="ignore"として扱い、全体の処理は止めない。
     """
+    research_profile = load_research_profile(interest_profile)
     feedback_context = build_feedback_context(feedback_list)
     results = []
 
     for i, paper in enumerate(papers):
-        prompt = _build_prompt(paper, interest_profile, feedback_context, score_threshold)
+        prompt = _build_prompt(paper, research_profile, feedback_context, score_threshold)
         text = _call_gemini_api(prompt, api_key, model)
 
-        judgement = dict(DEFAULT_JUDGEMENT)
-        if text is not None:
-            try:
-                parsed = _extract_json(text)
-                judgement["score"] = int(parsed.get("score", 0))
-                judgement["reason"] = str(parsed.get("reason", ""))
-                judgement["abstract_ja"] = str(parsed.get("abstract_ja", ""))
-                judgement["one_liner"] = str(parsed.get("one_liner", ""))
-            except Exception as e:
-                preview = text[:200] if text else None
-                print(f"[judge_translate] JSONパース失敗 ({paper['id']}): {e} / raw: {preview}")
-        else:
-            print(f"[judge_translate] Geminiから応答なし ({paper['id']})。スコア0として扱います。")
+        try:
+            judgement = parse_judgement(text, score_threshold)
+            if text is None:
+                print(f"[judge_translate] Geminiから応答なし ({paper['id']})。ignore扱いとします。")
+        except Exception as e:
+            preview = text[:200] if text else None
+            print(f"[judge_translate] JSONパース失敗 ({paper['id']}): {e} / raw: {preview}")
+            judgement = dict(DEFAULT_JUDGEMENT)
 
         merged = dict(paper)
         merged.update(judgement)

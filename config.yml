@@ -13,10 +13,13 @@ categories: ["hep-th", "gr-qc", "quant-ph"]
 # 重複通知は seen_ids.json で防いでいるので、広めに設定しても問題ない。
 lookback_hours: 96
 
-# この点数(0-10)以上のスコアの論文だけ通知する
+# Geminiがcategoryを正しく返さなかった場合のフォールバック用の閾値(0-10)。
+# この点数以上なら worth_reading、未満なら ignore として扱う(後方互換のため残置)。
+# 通常はGeminiが判定する4段階カテゴリ(notify_categories参照)が優先される。
 score_threshold: 6
 
-# 1日に通知する論文の最大件数(スコア降順で上位を採用)
+# 1日に通知する論文の最大件数(カテゴリ・スコア降順で上位を採用)。
+# 著者アラート(watch_authors)論文はこの件数に関係なく必ず通知に含まれる。
 max_papers: 8
 
 # 該当する論文が0件の日にも通知するか
@@ -25,8 +28,24 @@ notify_when_empty: false
 # LINE通知が成功した場合でも、追加でメールも送るか
 always_email: false
 
+# 監視対象著者。姓のみ、または "姓, 名イニシャル" 形式で記入してください。
+# 論文の著者リストと大文字小文字を無視した部分一致で照合します。
+# ヒットした論文はGeminiのスコアに関係なく必ず通知されます。
+watch_authors:
+  - "Takayanagi"
+  # ここに追記してください(例: - "Maldacena")
+
+# 通知するカテゴリ(judge_translate.pyが4段階で分類します)。
+# must_read: 今すぐ読むべき最重要論文 / worth_reading: 今週中に目を通す価値あり
+# abstract_only: 分野動向として要約だけ把握すれば十分 / ignore: 関連なし
+# GitHub Issueには ignore 以外の全カテゴリを記録します。
+notify_categories:
+  - must_read
+  - worth_reading
+
 # 興味プロファイル。Geminiによる関連度判定・スコアリングの基準文になります。
-# 自由に書き換えてください。
+# data/my_profile.md が存在する場合はそちらが優先され、この設定は
+# my_profile.md が無い場合のフォールバックとして使われます。
 interest_profile: |
   高柳匡(Tadashi Takayanagi)の研究領域全般。具体的には:
   ホログラフィックエンタングルメントエントロピー(RT/HRT公式)、AdS/CFT対応、

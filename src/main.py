@@ -3,11 +3,11 @@ arXiv hep-th 論文推薦Bot のエントリポイント。
 
 毎朝GitHub Actionsから実行され、以下の流れで処理する:
   1. フィードバック回収 (GitHub Issueのコメントを読む)
-  2. arXivから新着論文を取得
-  3. Geminiで関連度判定・翻訳
-  4. スコアが閾値以上の論文を選別
+  2. arXivから新着論文を取得し、著者ウォッチリストと照合
+  3. Geminiで関連度判定・4段階分類(must_read/worth_reading/abstract_only/ignore)・翻訳
+  4. 通知カテゴリで選別
   5. LINE / メールで通知
-  6. GitHub Issueを作成(フィードバック収集用)
+  6. GitHub Issueを作成(フィードバック収集用。ignore以外の全カテゴリを記録)
   7. 状態ファイル (seen_ids.json / feedback.json) を更新
 
 環境変数 DRY_RUN=1 のときは、通知・Issue作成/close・状態ファイル保存を行わず、
@@ -20,9 +20,9 @@ from datetime import datetime, timedelta, timezone
 
 import yaml
 
-from arxiv_fetch import fetch_recent_papers
+from arxiv_fetch import fetch_recent_papers, tag_author_alerts
 from feedback import collect_feedback, create_daily_issue, load_feedback, save_feedback
-from judge_translate import judge_and_translate_papers
+from judge_translate import CATEGORY_ORDER, judge_and_translate_papers
 from notify import notify
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -66,6 +66,42 @@ def prune_seen_ids(seen_ids):
     return pruned
 
 
+def _sort_key(paper):
+    """著者アラートを最優先、次にカテゴリ、次にスコア降順で並べる。"""
+    return (
+        0 if paper.get("author_alert") else 1,
+        CATEGORY_ORDER.get(paper.get("category", "ignore"), 1),
+        -paper.get("score", 0),
+    )
+
+
+def _ensure_author_alert_fallback(new_papers, judged):
+    """
+    author_alert論文がGemini判定の成否(APIキー未設定・例外・応答なし)に関わらず
+    必ず通知対象に含まれるよう、judgedに含まれていなければタイトル・著者・URLのみの
+    最小限のエントリを補完する。
+    """
+    judged_ids = {p["id"] for p in judged}
+    for p in new_papers:
+        if p.get("author_alert") and p["id"] not in judged_ids:
+            fallback = dict(p)
+            fallback.update(
+                {
+                    "score": 0,
+                    "category": "must_read",
+                    "title_ja": "",
+                    "abstract_ja": "",
+                    "reason": "(Gemini判定が実行できなかったため、著者アラートのみで通知しています)",
+                    "one_liner": "",
+                    "check_points": "",
+                    "suggested_action": "",
+                }
+            )
+            judged.append(fallback)
+            print(f"[main] Gemini判定なしで著者アラート論文を通知対象に追加しました: {p['id']}")
+    return judged
+
+
 def main():
     dry_run = os.environ.get("DRY_RUN") == "1"
     if dry_run:
@@ -93,7 +129,7 @@ def main():
     else:
         print("[main] GITHUB_REPOSITORY / GITHUB_TOKEN が未設定のため、フィードバック回収をスキップします")
 
-    # --- 2. arXiv新着取得 ---
+    # --- 2. arXiv新着取得 + 著者ウォッチリスト照合 ---
     seen_ids = load_seen_ids()
     try:
         papers = fetch_recent_papers(
@@ -105,9 +141,12 @@ def main():
         papers = []
 
     new_papers = [p for p in papers if p["id"] not in seen_ids]
-    print(f"[main] 新着(未通知)論文: {len(new_papers)}件")
+    new_papers = tag_author_alerts(new_papers, config.get("watch_authors", []))
+    alert_count = sum(1 for p in new_papers if p.get("author_alert"))
+    print(f"[main] 新着(未通知)論文: {len(new_papers)}件 (うち著者アラート: {alert_count}件)")
 
-    # --- 3. Geminiで判定+翻訳 ---
+    # --- 3. Geminiで判定+翻訳(4段階分類) ---
+    threshold = config.get("score_threshold", 6)
     judged = []
     if new_papers:
         if not gemini_api_key:
@@ -120,22 +159,40 @@ def main():
                     feedback_list,
                     gemini_api_key,
                     gemini_model,
-                    config.get("score_threshold", 6),
+                    threshold,
                 )
             except Exception as e:
                 print(f"[main] Gemini判定でエラーが発生しました: {e}")
 
-    # --- 4. スコアで選別 ---
-    threshold = config.get("score_threshold", 6)
-    max_papers = config.get("max_papers", 8)
-    selected = [p for p in judged if p.get("score", 0) >= threshold]
-    selected.sort(key=lambda p: p.get("score", 0), reverse=True)
-    selected = selected[:max_papers]
+        judged = _ensure_author_alert_fallback(new_papers, judged)
 
-    print(f"[main] 通知対象論文: {len(selected)}件 (閾値{threshold}以上)")
+    # --- 4. カテゴリで選別 ---
+    notify_categories = config.get("notify_categories") or ["must_read", "worth_reading"]
+    max_papers = config.get("max_papers", 8)
+
+    issue_papers = [p for p in judged if p.get("category", "ignore") != "ignore"]
+    issue_papers.sort(key=_sort_key)
+
+    alert_papers = [p for p in judged if p.get("author_alert")]
+    category_papers = [
+        p for p in judged if not p.get("author_alert") and p.get("category") in notify_categories
+    ]
+    category_papers.sort(key=_sort_key)
+    notify_papers = alert_papers + category_papers[:max_papers]
+    notify_papers.sort(key=_sort_key)
+
+    notify_paper_ids = {p["id"] for p in notify_papers}
+    abstract_only_count = sum(
+        1 for p in judged if p.get("category") == "abstract_only" and p["id"] not in notify_paper_ids
+    )
+
+    print(
+        f"[main] Issue記録対象: {len(issue_papers)}件 / 通知対象: {len(notify_papers)}件 "
+        f"(要約のみ{abstract_only_count}件)"
+    )
 
     notify_when_empty = config.get("notify_when_empty", False)
-    should_notify = bool(selected) or notify_when_empty
+    should_notify = bool(notify_papers) or bool(abstract_only_count) or notify_when_empty
 
     issue_url = None
 
@@ -144,7 +201,7 @@ def main():
             print("[main] (DRY_RUN) Issue作成をスキップしました")
         elif repo and github_token:
             try:
-                _, issue_url = create_daily_issue(repo, github_token, date_str, selected)
+                _, issue_url = create_daily_issue(repo, github_token, date_str, issue_papers)
             except Exception as e:
                 print(f"[main] Issue作成でエラーが発生しました: {e}")
         else:
@@ -160,18 +217,20 @@ def main():
             }
             try:
                 notify(
-                    selected,
+                    notify_papers,
                     issue_url or "(Issue作成に失敗しました。リポジトリのIssue一覧をご確認ください)",
                     date_str,
                     env,
                     always_email=config.get("always_email", False),
+                    abstract_only_count=abstract_only_count,
                 )
             except Exception as e:
                 print(f"[main] 通知処理でエラーが発生しました: {e}")
         else:
             print("[main] (DRY_RUN) 通知をスキップしました。以下が送信予定の内容です:")
-            for p in selected:
-                print(f"  - [{p.get('score')}] {p['title']}")
+            for p in notify_papers:
+                alert_mark = "🔔 " if p.get("author_alert") else ""
+                print(f"  - {alert_mark}[{p.get('category')}/{p.get('score')}] {p['title']}")
     else:
         print("[main] 該当論文なし、かつ notify_when_empty=false のため通知をスキップします")
 

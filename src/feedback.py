@@ -13,8 +13,16 @@ from datetime import datetime, timezone
 
 import requests
 
+from bibtex import build_bibtex_entry
+
 GITHUB_API_BASE = "https://api.github.com"
 LABEL_NAME = "daily-papers"
+
+CATEGORY_SECTIONS = [
+    ("must_read", "🔴 must_read(今すぐ読むべき)"),
+    ("worth_reading", "🟡 worth_reading(今週中に目を通す価値あり)"),
+    ("abstract_only", "⚪ abstract_only(動向として要約のみ把握)"),
+]
 
 # Issue本文末尾に埋め込む隠しメタデータ: <!-- papers: {"1": {"id": "...", "title": "..."}, ...} -->
 META_PATTERN = re.compile(r"<!--\s*papers:\s*(\{.*?\})\s*-->", re.DOTALL)
@@ -48,9 +56,39 @@ def ensure_label_exists(repo, token):
         print(f"[feedback] ラベル作成に失敗しました: {e}")
 
 
+def _render_paper_entry(idx, p, category):
+    """1論文分のIssue本文ブロックを組み立てる(カテゴリに応じて詳細度を変える)。"""
+    lines = []
+    heading = f"### [{idx}] "
+    if p.get("author_alert"):
+        heading += f"🔔 著者アラート: {p.get('matched_author', '')} — "
+    heading += p.get("title_ja") or p["title"]
+    lines.append(heading)
+    if p.get("title_ja"):
+        lines.append(f"- 原題: {p['title']}")
+    lines.append(f"- 著者: {', '.join(p.get('authors', []))}")
+    lines.append(f"- スコア: {p.get('score', 0)}/10")
+    lines.append(f"- リンク: {p['url']}")
+
+    if category in ("must_read", "worth_reading"):
+        lines.append(f"- 理由: {p.get('reason', '')}")
+        if p.get("check_points"):
+            lines.append(f"- チェック点: {p.get('check_points')}")
+        if p.get("suggested_action"):
+            lines.append(f"- 推奨行動: {p.get('suggested_action')}")
+        lines.append("")
+        lines.append("**アブスト和訳:**")
+        lines.append(p.get("abstract_ja", "") or "(翻訳なし)")
+    else:
+        lines.append(f"- 一言: {p.get('one_liner', '')}")
+
+    return lines
+
+
 def create_daily_issue(repo, token, date_str, papers):
     """
-    本日の推薦論文一覧をIssueとして作成する。
+    本日の推薦論文一覧をIssueとして作成する(ignore以外の全カテゴリをセクション別に記載)。
+    must_read論文にはBibTeX entryを折りたたみで併記する。
     本文末尾に隠しメタデータ(HTMLコメント)を埋め込み、翌朝のフィードバック回収に使う。
 
     戻り値: (issue_number, issue_html_url)。失敗時は (None, None)。
@@ -63,16 +101,31 @@ def create_daily_issue(repo, token, date_str, papers):
     if not papers:
         body_lines.append("本日は該当する論文がありませんでした。\n")
     else:
-        for i, p in enumerate(papers, start=1):
-            body_lines.append(f"## [{i}] {p['title']}")
-            body_lines.append(f"- スコア: {p.get('score', 0)}/10")
-            body_lines.append(f"- 一言: {p.get('one_liner', '')}")
-            body_lines.append(f"- リンク: {p['url']}")
-            body_lines.append("")
-            body_lines.append("**アブスト和訳:**")
-            body_lines.append(p.get("abstract_ja", "") or "(翻訳なし)")
-            body_lines.append("")
-            meta[str(i)] = {"id": p["id"], "title": p["title"]}
+        used_bibtex_keys = set()
+        idx = 0
+        for category, section_title in CATEGORY_SECTIONS:
+            group = [p for p in papers if p.get("category") == category]
+            if not group:
+                continue
+            group.sort(key=lambda p: (0 if p.get("author_alert") else 1, -p.get("score", 0)))
+
+            body_lines.append(f"## {section_title}\n")
+            for p in group:
+                idx += 1
+                body_lines.extend(_render_paper_entry(idx, p, category))
+
+                if category == "must_read":
+                    bibtex_entry = build_bibtex_entry(p, used_bibtex_keys)
+                    body_lines.append("")
+                    body_lines.append("<details><summary>BibTeX</summary>")
+                    body_lines.append("")
+                    body_lines.append("```bibtex")
+                    body_lines.append(bibtex_entry)
+                    body_lines.append("```")
+                    body_lines.append("</details>")
+
+                body_lines.append("")
+                meta[str(idx)] = {"id": p["id"], "title": p["title"]}
 
     body_lines.append("---")
     body_lines.append(
