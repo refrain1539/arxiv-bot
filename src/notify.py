@@ -4,9 +4,11 @@ LINE / メール通知モジュール。
 - LINE Messaging APIのPush Messageを第一優先で使う
 - LINEが未設定、または送信失敗した場合はGmail SMTPでメール送信にフォールバックする
 - always_email設定がTrueの場合は、LINE成功時にもメールを送る
-- 通知は二層構造: must_read(詳細) / worth_reading(簡易) / abstract_only(件数のみ)
+- 通知はカテゴリ別に見出しを付けて全件表示する(must_read/worth_reading/abstract_only)
+- must_readにもスコア(★)とアブストラクト全訳を表示する
 - 著者アラート(author_alert)論文は🔔付きで最上部に表示する
-- LINEは5000字制限があるため、収まらない場合はworth_reading以下を省略しIssue誘導に置き換える
+- LINEは5000字制限があるため、実際の文字数を毎回ログに出力する
+  (省略は行わず全件表示する方針だが、万一超過した場合のみ末尾を強制的に切り詰める)
 """
 
 import smtplib
@@ -18,6 +20,13 @@ import requests
 
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 LINE_MAX_LEN = 5000
+
+CATEGORY_TIER_ORDER = ["must_read", "worth_reading", "abstract_only"]
+CATEGORY_LABELS = {
+    "must_read": "🔴 must_read(今すぐ読むべき)",
+    "worth_reading": "🟡 worth_reading(今週中に目を通す価値あり)",
+    "abstract_only": "⚪ abstract_only(動向として要約のみ把握)",
+}
 
 
 def _short_date(date_str):
@@ -49,78 +58,85 @@ def _format_alert_block(p):
 def _format_must_read_block(index, p):
     authors = ", ".join(p.get("authors", []))
     reason = p.get("reason") or p.get("one_liner") or ""
-    return f"[{index}] {_display_title(p)}\n著者: {authors}\n{reason}\n{p['url']}\n\n"
+    abstract = p.get("abstract_ja") or "(翻訳なし)"
+    return (
+        f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n"
+        f"著者: {authors}\n"
+        f"{reason}\n"
+        f"{abstract}\n"
+        f"{p['url']}\n\n"
+    )
 
 
 def _format_worth_reading_block(index, p):
-    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p['url']}\n\n"
+    authors = ", ".join(p.get("authors", []))
+    reason = p.get("reason") or p.get("one_liner") or ""
+    abstract = p.get("abstract_ja") or ""
+    return (
+        f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n"
+        f"著者: {authors}\n"
+        f"{reason}\n"
+        f"{abstract}\n"
+        f"{p['url']}\n\n"
+    )
 
 
-def build_line_text(papers, issue_url, date_str, abstract_only_count=0):
-    """LINE用のテキストメッセージを組み立てる(5000字制限に収める)。"""
+def _format_abstract_only_block(index, p):
+    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p.get('one_liner', '')}\n{p['url']}\n\n"
+
+
+_BLOCK_FORMATTERS = {
+    "must_read": _format_must_read_block,
+    "worth_reading": _format_worth_reading_block,
+    "abstract_only": _format_abstract_only_block,
+}
+
+
+def build_line_text(papers, issue_url, date_str):
+    """LINE用のテキストメッセージを組み立てる。全件表示し、省略は行わない。"""
     header = f"📄 今朝の hep-th ({_short_date(date_str)}) — {len(papers)}件\n\n"
     footer = f"\n👍/👎 はこちら: {issue_url}"
 
-    if not papers and not abstract_only_count:
+    if not papers:
         return header + "本日は該当する論文がありませんでした。" + footer
 
     alert_papers = [p for p in papers if p.get("author_alert")]
     non_alert = [p for p in papers if not p.get("author_alert")]
-    must_read = [p for p in non_alert if p.get("category") == "must_read"]
-    worth_reading = [p for p in non_alert if p.get("category") != "must_read"]
 
-    budget = LINE_MAX_LEN - len(header) - len(footer) - 50  # 余裕を持たせる
-    body_parts = []
-    used = 0
+    body_parts = [_format_alert_block(p) for p in alert_papers]
 
-    # 著者アラートはスコア・文字数に関係なく必ず含める
-    for p in alert_papers:
-        block = _format_alert_block(p)
-        body_parts.append(block)
-        used += len(block)
+    index = 0
+    for category in CATEGORY_TIER_ORDER:
+        group = [p for p in non_alert if p.get("category") == category]
+        if not group:
+            continue
+        body_parts.append(f"――― {CATEGORY_LABELS[category]} ―――\n")
+        formatter = _BLOCK_FORMATTERS[category]
+        for p in group:
+            index += 1
+            body_parts.append(formatter(index, p))
 
-    must_read_truncated = False
-    for i, p in enumerate(must_read, start=1):
-        block = _format_must_read_block(i, p)
-        if used + len(block) > budget:
-            must_read_truncated = True
-            break
-        body_parts.append(block)
-        used += len(block)
+    text = header + "".join(body_parts) + footer
 
-    worth_reading_omitted = len(worth_reading) if must_read_truncated else 0
-    if not must_read_truncated:
-        for i, p in enumerate(worth_reading, start=len(must_read) + 1):
-            block = _format_worth_reading_block(i, p)
-            if used + len(block) > budget:
-                worth_reading_omitted = len(worth_reading) - (i - len(must_read) - 1)
-                break
-            body_parts.append(block)
-            used += len(block)
+    if len(text) > LINE_MAX_LEN:
+        print(
+            f"[notify] 警告: LINE本文が{len(text)}字でLINEの上限{LINE_MAX_LEN}字を超えたため、"
+            f"末尾を強制的に切り詰めます"
+        )
+        text = text[:LINE_MAX_LEN]
+    else:
+        print(f"[notify] LINE本文の文字数: {len(text)}字 / 上限{LINE_MAX_LEN}字")
 
-    text = header + "".join(body_parts)
-
-    notes = []
-    if worth_reading_omitted:
-        notes.append(f"worth_reading等{worth_reading_omitted}件は文字数の都合で省略")
-    if abstract_only_count:
-        notes.append(f"他に要約把握{abstract_only_count}本")
-    if notes:
-        text += "(" + " / ".join(notes) + " → Issue参照)\n"
-
-    text += footer
-    return text[:LINE_MAX_LEN]
+    return text
 
 
-def build_email_html(papers, issue_url, date_str, abstract_only_count=0):
+def build_email_html(papers, issue_url, date_str):
     """メール用のHTML本文を組み立てる(文字数制限がないため全件表示)。"""
     alert_papers = [p for p in papers if p.get("author_alert")]
     non_alert = [p for p in papers if not p.get("author_alert")]
-    must_read = [p for p in non_alert if p.get("category") == "must_read"]
-    worth_reading = [p for p in non_alert if p.get("category") != "must_read"]
 
     rows = []
-    if not papers and not abstract_only_count:
+    if not papers:
         rows.append("<p>本日は該当する論文がありませんでした。</p>")
 
     for p in alert_papers:
@@ -136,34 +152,22 @@ def build_email_html(papers, issue_url, date_str, abstract_only_count=0):
             """
         )
 
-    for i, p in enumerate(must_read, start=1):
-        authors = ", ".join(p.get("authors", []))
-        rows.append(
-            f"""
-            <h3>[must_read {i}] <a href="{p['url']}">{_display_title(p)}</a></h3>
-            <p>著者: {authors}</p>
-            <p>スコア: {p.get('score', 0)}/10 ・ 理由: {p.get('reason', '')}</p>
-            <p>チェック点: {p.get('check_points', '')}</p>
-            <p>推奨行動: {p.get('suggested_action', '')}</p>
-            <p style="white-space: pre-wrap;">{p.get('abstract_ja', '')}</p>
-            <hr/>
-            """
-        )
-
-    for i, p in enumerate(worth_reading, start=1):
-        authors = ", ".join(p.get("authors", []))
-        rows.append(
-            f"""
-            <h3>[worth_reading {i}] <a href="{p['url']}">{_display_title(p)}</a></h3>
-            <p>著者: {authors}</p>
-            <p>スコア: {p.get('score', 0)}/10 ・ 理由: {p.get('reason', '')}</p>
-            <p style="white-space: pre-wrap;">{p.get('abstract_ja', '')}</p>
-            <hr/>
-            """
-        )
-
-    if abstract_only_count:
-        rows.append(f"<p>他に要約把握のみ {abstract_only_count} 本 → Issueをご確認ください。</p>")
+    for category in CATEGORY_TIER_ORDER:
+        group = [p for p in non_alert if p.get("category") == category]
+        if not group:
+            continue
+        rows.append(f"<h2>{CATEGORY_LABELS[category]}</h2>")
+        for i, p in enumerate(group, start=1):
+            authors = ", ".join(p.get("authors", []))
+            rows.append(
+                f"""
+                <h3>[{category} {i}] <a href="{p['url']}">{_display_title(p)}</a></h3>
+                <p>著者: {authors}</p>
+                <p>スコア: {p.get('score', 0)}/10 ・ 理由: {p.get('reason') or p.get('one_liner', '')}</p>
+                <p style="white-space: pre-wrap;">{p.get('abstract_ja', '')}</p>
+                <hr/>
+                """
+            )
 
     return f"""
     <html><body>
@@ -209,7 +213,7 @@ def send_email(subject, html_body, gmail_address, gmail_app_password, mail_to):
         return False
 
 
-def notify(papers, issue_url, date_str, env, always_email=False, abstract_only_count=0):
+def notify(papers, issue_url, date_str, env, always_email=False):
     """
     LINEを第一優先、失敗/未設定時はメールにフォールバックして通知する。
     両方失敗しても例外は投げず、ログに残すだけにする(Issueは既に作成済みのため)。
@@ -222,7 +226,7 @@ def notify(papers, issue_url, date_str, env, always_email=False, abstract_only_c
 
     line_ok = False
     if line_token and line_user_id:
-        text = build_line_text(papers, issue_url, date_str, abstract_only_count=abstract_only_count)
+        text = build_line_text(papers, issue_url, date_str)
         line_ok = send_line_message(text, line_token, line_user_id)
     else:
         print("[notify] LINEの環境変数が未設定のため、メールにフォールバックします")
@@ -233,7 +237,7 @@ def notify(papers, issue_url, date_str, env, always_email=False, abstract_only_c
     if need_email:
         if email_configured:
             subject = f"📄 今朝の hep-th ({_short_date(date_str)}) — {len(papers)}件"
-            html = build_email_html(papers, issue_url, date_str, abstract_only_count=abstract_only_count)
+            html = build_email_html(papers, issue_url, date_str)
             send_email(subject, html, gmail_address, gmail_app_password, mail_to)
         else:
             print("[notify] メールの環境変数も未設定のため、メール送信をスキップしました")

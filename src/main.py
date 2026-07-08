@@ -181,18 +181,10 @@ def main():
     notify_papers = alert_papers + category_papers[:max_papers]
     notify_papers.sort(key=_sort_key)
 
-    notify_paper_ids = {p["id"] for p in notify_papers}
-    abstract_only_count = sum(
-        1 for p in judged if p.get("category") == "abstract_only" and p["id"] not in notify_paper_ids
-    )
-
-    print(
-        f"[main] Issue記録対象: {len(issue_papers)}件 / 通知対象: {len(notify_papers)}件 "
-        f"(要約のみ{abstract_only_count}件)"
-    )
+    print(f"[main] Issue記録対象: {len(issue_papers)}件 / 通知対象: {len(notify_papers)}件")
 
     notify_when_empty = config.get("notify_when_empty", False)
-    should_notify = bool(notify_papers) or bool(abstract_only_count) or notify_when_empty
+    should_notify = bool(notify_papers) or notify_when_empty
 
     issue_url = None
 
@@ -222,7 +214,6 @@ def main():
                     date_str,
                     env,
                     always_email=config.get("always_email", False),
-                    abstract_only_count=abstract_only_count,
                 )
             except Exception as e:
                 print(f"[main] 通知処理でエラーが発生しました: {e}")

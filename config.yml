@@ -43,6 +43,7 @@ watch_authors:
 notify_categories:
   - must_read
   - worth_reading
+  - abstract_only
 
 # 興味プロファイル。Geminiによる関連度判定・スコアリングの基準文になります。
 # data/my_profile.md が存在する場合はそちらが優先され、この設定は

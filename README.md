@@ -48,10 +48,14 @@ Geminiは各論文を以下の4段階に分類します。
 notify_categories:
   - must_read
   - worth_reading
+  - abstract_only
 ```
 
-LINEでは `must_read` は詳細(タイトル和訳・著者・理由・リンク)、`worth_reading` は
-簡易表示(タイトル和訳・スコア・リンク)、`abstract_only` は件数のみの表示になります。
+LINE・メールとも、`notify_categories` に含めたカテゴリは見出し(🔴must_read /
+🟡worth_reading / ⚪abstract_only)ごとにまとめて全件表示されます。`must_read` /
+`worth_reading` はスコア(★)・著者・理由・アブストラクト全訳つき、`abstract_only` は
+タイトル和訳・スコア・一言要約のみです。`notify_categories` から外したカテゴリは
+LINE・メールには出ませんが、GitHub Issueには(`ignore`以外)常に記録されます。
 
 ### 研究プロファイル(data/my_profile.md)
 
