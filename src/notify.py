@@ -69,16 +69,7 @@ def _format_must_read_block(index, p):
 
 
 def _format_worth_reading_block(index, p):
-    authors = ", ".join(p.get("authors", []))
-    reason = p.get("reason") or p.get("one_liner") or ""
-    abstract = p.get("abstract_ja") or ""
-    return (
-        f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n"
-        f"著者: {authors}\n"
-        f"{reason}\n"
-        f"{abstract}\n"
-        f"{p['url']}\n\n"
-    )
+    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p['url']}\n\n"
 
 
 def _format_abstract_only_block(index, p):
