@@ -116,14 +116,15 @@ def _build_prompt(paper, research_profile, feedback_context, score_threshold):
    自然な日本語に翻訳して abstract_ja に書け。それ以外は abstract_ja は空文字列("")でよい。
    ただし物理の専門用語(replica trick, bulk reconstruction, quantum extremal surface等)は
    無理に和訳せず、慣用的なカタカナまたは英語のまま残してよい。
-5. one_liner には、この論文の内容を30字程度で要約した日本語を書け。
+5. one_liner には、この論文の内容(何を扱い、どんな手法で、どんな結果を得たか)を
+   2〜3文(80〜150字程度)の日本語で要約せよ。1文だけの短い要約にはしないこと。
 6. check_points と suggested_action は category が "must_read" または "worth_reading" の
    場合のみ必須とし、それ以外は空文字列("")でよい。
    - check_points: 読む際に特に確認すべき箇所(セクション名、数式、前提条件など)
    - suggested_action: 読むために取るべき具体的な行動(所要時間の目安を含めてよい)
 7. 以下のJSON形式のみを出力せよ。説明文やコードフェンス(```)は不要。
 
-{{"score": <0から10の整数>, "category": "<must_read|worth_reading|abstract_only|ignore>", "title_ja": "<タイトルの日本語訳>", "reason": "<1文の判定理由(日本語)。プロファイルのどの項目と関係するかを含める>", "abstract_ja": "<アブストラクト全訳、または空文字列>", "one_liner": "<30字程度の日本語要約>", "check_points": "<確認すべき箇所、または空文字列>", "suggested_action": "<推奨される行動、または空文字列>"}}
+{{"score": <0から10の整数>, "category": "<must_read|worth_reading|abstract_only|ignore>", "title_ja": "<タイトルの日本語訳>", "reason": "<1文の判定理由(日本語)。プロファイルのどの項目と関係するかを含める>", "abstract_ja": "<アブストラクト全訳、または空文字列>", "one_liner": "<2〜3文(80〜150字程度)の日本語要約>", "check_points": "<確認すべき箇所、または空文字列>", "suggested_action": "<推奨される行動、または空文字列>"}}
 """
 
 

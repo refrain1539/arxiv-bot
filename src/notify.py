@@ -39,7 +39,8 @@ def _short_date(date_str):
 
 
 def _display_title(p):
-    return p.get("title_ja") or p.get("title", "")
+    """LINEでは原題(英語)を表示する。"""
+    return p.get("title") or p.get("title_ja", "")
 
 
 def _format_alert_block(p):
@@ -69,7 +70,8 @@ def _format_must_read_block(index, p):
 
 
 def _format_worth_reading_block(index, p):
-    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p['url']}\n\n"
+    comment = p.get("one_liner") or ""
+    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{comment}\n{p['url']}\n\n"
 
 
 def _format_abstract_only_block(index, p):
