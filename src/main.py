@@ -214,6 +214,7 @@ def main():
                     date_str,
                     env,
                     always_email=config.get("always_email", False),
+                    notify_categories=notify_categories,
                 )
             except Exception as e:
                 print(f"[main] 通知処理でエラーが発生しました: {e}")

@@ -69,13 +69,17 @@ def _format_must_read_block(index, p):
     )
 
 
+def _comment_text(p):
+    """one_linerが空の場合でも何かしら表示されるようにフォールバックする。"""
+    return p.get("one_liner") or p.get("reason") or "(コメントなし)"
+
+
 def _format_worth_reading_block(index, p):
-    comment = p.get("one_liner") or ""
-    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{comment}\n{p['url']}\n\n"
+    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{_comment_text(p)}\n{p['url']}\n\n"
 
 
 def _format_abstract_only_block(index, p):
-    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p.get('one_liner', '')}\n{p['url']}\n\n"
+    return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{_comment_text(p)}\n{p['url']}\n\n"
 
 
 _BLOCK_FORMATTERS = {
@@ -85,10 +89,16 @@ _BLOCK_FORMATTERS = {
 }
 
 
-def build_line_text(papers, issue_url, date_str):
-    """LINE用のテキストメッセージを組み立てる。全件表示し、省略は行わない。"""
+def build_line_text(papers, issue_url, date_str, notify_categories=None):
+    """
+    LINE用のテキストメッセージを組み立てる。全件表示し、省略は行わない。
+    notify_categoriesに含まれるカテゴリは、該当論文が0件でも見出しと
+    「該当なし」を表示する(通知対象外のカテゴリについては何も表示しない)。
+    """
     header = f"📄 今朝の hep-th ({_short_date(date_str)}) — {len(papers)}件\n\n"
     footer = f"\n👍/👎 はこちら: {issue_url}"
+
+    tracked_categories = notify_categories if notify_categories is not None else CATEGORY_TIER_ORDER
 
     if not papers:
         return header + "本日は該当する論文がありませんでした。" + footer
@@ -100,10 +110,13 @@ def build_line_text(papers, issue_url, date_str):
 
     index = 0
     for category in CATEGORY_TIER_ORDER:
-        group = [p for p in non_alert if p.get("category") == category]
-        if not group:
+        if category not in tracked_categories:
             continue
+        group = [p for p in non_alert if p.get("category") == category]
         body_parts.append(f"――― {CATEGORY_LABELS[category]} ―――\n")
+        if not group:
+            body_parts.append("該当なし\n\n")
+            continue
         formatter = _BLOCK_FORMATTERS[category]
         for p in group:
             index += 1
@@ -206,7 +219,7 @@ def send_email(subject, html_body, gmail_address, gmail_app_password, mail_to):
         return False
 
 
-def notify(papers, issue_url, date_str, env, always_email=False):
+def notify(papers, issue_url, date_str, env, always_email=False, notify_categories=None):
     """
     LINEを第一優先、失敗/未設定時はメールにフォールバックして通知する。
     両方失敗しても例外は投げず、ログに残すだけにする(Issueは既に作成済みのため)。
@@ -219,7 +232,7 @@ def notify(papers, issue_url, date_str, env, always_email=False):
 
     line_ok = False
     if line_token and line_user_id:
-        text = build_line_text(papers, issue_url, date_str)
+        text = build_line_text(papers, issue_url, date_str, notify_categories=notify_categories)
         line_ok = send_line_message(text, line_token, line_user_id)
     else:
         print("[notify] LINEの環境変数が未設定のため、メールにフォールバックします")

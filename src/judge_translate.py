@@ -88,8 +88,7 @@ def _build_prompt(paper, research_profile, feedback_context, score_threshold):
     authors = ", ".join(paper.get("authors", []))
     return f"""あなたは理論物理学(素粒子論・重力理論)の専門家アシスタントです。
 以下の研究プロファイルを持つ研究者に、次の論文が関連するかどうかを判定してください。
-「現在の研究テーマ」との関連を最重視し、reasonフィールドではプロファイルのどの項目と
-関係するかを具体的に明示してください。
+「現在の研究テーマ」との関連を最重視してcategoryとscoreを判定してください。
 
 # 研究プロファイル
 {research_profile}
@@ -116,15 +115,22 @@ def _build_prompt(paper, research_profile, feedback_context, score_threshold):
    自然な日本語に翻訳して abstract_ja に書け。それ以外は abstract_ja は空文字列("")でよい。
    ただし物理の専門用語(replica trick, bulk reconstruction, quantum extremal surface等)は
    無理に和訳せず、慣用的なカタカナまたは英語のまま残してよい。
-5. one_liner には、この論文の内容(何を扱い、どんな手法で、どんな結果を得たか)を
+5. reason には、この論文が具体的に何を主張・証明・計算しているかを1〜2文で書け。
+   「現在の研究テーマに関連するため」「〇〇や△△に直接関連する」のようにテーマ名を
+   並べるだけの抽象的な理由は禁止する。必ず論文の中身(対象・手法・結果)に基づいて書くこと。
+   ただし、論文の中身が現在の研究テーマの核心と具体的に一致する場合
+   (例: Gödel時空を用いた具体的な解析を行っている、TTbar変形の具体的な計算を行っている等)
+   に限り、その一致点も1文で書き加えてよい。
+6. one_liner には、この論文の内容(何を扱い、どんな手法で、どんな結果を得たか)を
    2〜3文(80〜150字程度)の日本語で要約せよ。1文だけの短い要約にはしないこと。
-6. check_points と suggested_action は category が "must_read" または "worth_reading" の
+   reasonと同じ内容の繰り返しにせず、必ず具体的な内容を書くこと(空文字列は不可)。
+7. check_points と suggested_action は category が "must_read" または "worth_reading" の
    場合のみ必須とし、それ以外は空文字列("")でよい。
    - check_points: 読む際に特に確認すべき箇所(セクション名、数式、前提条件など)
    - suggested_action: 読むために取るべき具体的な行動(所要時間の目安を含めてよい)
-7. 以下のJSON形式のみを出力せよ。説明文やコードフェンス(```)は不要。
+8. 以下のJSON形式のみを出力せよ。説明文やコードフェンス(```)は不要。
 
-{{"score": <0から10の整数>, "category": "<must_read|worth_reading|abstract_only|ignore>", "title_ja": "<タイトルの日本語訳>", "reason": "<1文の判定理由(日本語)。プロファイルのどの項目と関係するかを含める>", "abstract_ja": "<アブストラクト全訳、または空文字列>", "one_liner": "<2〜3文(80〜150字程度)の日本語要約>", "check_points": "<確認すべき箇所、または空文字列>", "suggested_action": "<推奨される行動、または空文字列>"}}
+{{"score": <0から10の整数>, "category": "<must_read|worth_reading|abstract_only|ignore>", "title_ja": "<タイトルの日本語訳>", "reason": "<論文の中身に基づく1〜2文の理由。研究テーマの核心と具体的に一致する場合のみその旨を追記>", "abstract_ja": "<アブストラクト全訳、または空文字列>", "one_liner": "<2〜3文(80〜150字程度)の日本語要約。空文字列は不可>", "check_points": "<確認すべき箇所、または空文字列>", "suggested_action": "<推奨される行動、または空文字列>"}}
 """
 
 
