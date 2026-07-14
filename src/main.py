@@ -160,6 +160,7 @@ def main():
                     gemini_api_key,
                     gemini_model,
                     threshold,
+                    batch_size=config.get("gemini_batch_size", 8),
                 )
             except Exception as e:
                 print(f"[main] Gemini判定でエラーが発生しました: {e}")
