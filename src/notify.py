@@ -7,8 +7,10 @@ LINE / メール通知モジュール。
 - 通知はカテゴリ別に見出しを付けて全件表示する(must_read/worth_reading/abstract_only)
 - must_readにもスコア(★)とアブストラクト全訳を表示する
 - 著者アラート(author_alert)論文は🔔付きで最上部に表示する
-- LINEは5000字制限があるため、実際の文字数を毎回ログに出力する
-  (省略は行わず全件表示する方針だが、万一超過した場合のみ末尾を強制的に切り詰める)
+- LINEは5000字制限があるため、実際の文字数を毎回ログに出力する。基本は全件表示する
+  方針だが、上限に近づいた場合のみ優先度の低いカテゴリ(abstract_only→worth_reading)の
+  スコアが低い論文から丸ごと間引く(must_read・著者アラートは間引かない)。
+  それでも収まらない場合のみ最終手段として末尾を強制的に切り詰める
 """
 
 import smtplib
@@ -20,6 +22,8 @@ import requests
 
 LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push"
 LINE_MAX_LEN = 5000
+# LINE側の文字数カウントとの誤差に備えて、切り詰めの目標は上限より少し余裕を持たせる
+LINE_SAFE_MAX_LEN = LINE_MAX_LEN - 100
 
 CATEGORY_TIER_ORDER = ["must_read", "worth_reading", "abstract_only"]
 CATEGORY_LABELS = {
@@ -89,9 +93,29 @@ _BLOCK_FORMATTERS = {
 }
 
 
+def _render_line_text(header, footer, alert_blocks, tier_groups, omitted_counts):
+    parts = list(alert_blocks)
+    index = 0
+    for category, group in tier_groups.items():
+        parts.append(f"――― {CATEGORY_LABELS[category]} ―――\n")
+        if not group and not omitted_counts.get(category):
+            parts.append("該当なし\n\n")
+            continue
+        formatter = _BLOCK_FORMATTERS[category]
+        for p in group:
+            index += 1
+            parts.append(formatter(index, p))
+        if omitted_counts.get(category):
+            parts.append(f"(文字数の都合で他{omitted_counts[category]}件省略 → Issue参照)\n\n")
+    return header + "".join(parts) + footer
+
+
 def build_line_text(papers, issue_url, date_str, notify_categories=None):
     """
-    LINE用のテキストメッセージを組み立てる。全件表示し、省略は行わない。
+    LINE用のテキストメッセージを組み立てる。基本は全件表示し、省略は行わない。
+    ただし合計がLINEの上限(5000字)に近づいた場合のみ、優先度の低いカテゴリ
+    (abstract_only→worth_reading)のスコアが低い論文から丸ごと間引く
+    (must_read・著者アラートは間引かない)。
     notify_categoriesに含まれるカテゴリは、該当論文が0件でも見出しと
     「該当なし」を表示する(通知対象外のカテゴリについては何も表示しない)。
     """
@@ -106,32 +130,36 @@ def build_line_text(papers, issue_url, date_str, notify_categories=None):
     alert_papers = [p for p in papers if p.get("author_alert")]
     non_alert = [p for p in papers if not p.get("author_alert")]
 
-    body_parts = [_format_alert_block(p) for p in alert_papers]
+    alert_blocks = [_format_alert_block(p) for p in alert_papers]
 
-    index = 0
-    for category in CATEGORY_TIER_ORDER:
-        if category not in tracked_categories:
-            continue
-        group = [p for p in non_alert if p.get("category") == category]
-        body_parts.append(f"――― {CATEGORY_LABELS[category]} ―――\n")
-        if not group:
-            body_parts.append("該当なし\n\n")
-            continue
-        formatter = _BLOCK_FORMATTERS[category]
-        for p in group:
-            index += 1
-            body_parts.append(formatter(index, p))
+    # カテゴリごとに論文リスト(スコア降順のまま)を保持しておき、必要な場合のみ
+    # 末尾(=スコアが低い方)から間引く
+    tier_groups = {
+        category: [p for p in non_alert if p.get("category") == category]
+        for category in CATEGORY_TIER_ORDER
+        if category in tracked_categories
+    }
+    omitted_counts = {category: 0 for category in tier_groups}
 
-    text = header + "".join(body_parts) + footer
+    text = _render_line_text(header, footer, alert_blocks, tier_groups, omitted_counts)
+
+    drop_order = [c for c in ("abstract_only", "worth_reading") if c in tier_groups]
+    for category in drop_order:
+        while len(text) > LINE_SAFE_MAX_LEN and tier_groups[category]:
+            tier_groups[category].pop()
+            omitted_counts[category] += 1
+            text = _render_line_text(header, footer, alert_blocks, tier_groups, omitted_counts)
+        if len(text) <= LINE_SAFE_MAX_LEN:
+            break
 
     if len(text) > LINE_MAX_LEN:
         print(
-            f"[notify] 警告: LINE本文が{len(text)}字でLINEの上限{LINE_MAX_LEN}字を超えたため、"
-            f"末尾を強制的に切り詰めます"
+            f"[notify] 警告: 著者アラート・must_readだけでもLINE上限{LINE_MAX_LEN}字を"
+            f"超えています({len(text)}字)。末尾を強制的に切り詰めます"
         )
         text = text[:LINE_MAX_LEN]
     else:
-        print(f"[notify] LINE本文の文字数: {len(text)}字 / 上限{LINE_MAX_LEN}字")
+        print(f"[notify] LINE本文の文字数: {len(text)}字 / 上限{LINE_MAX_LEN}字(安全域{LINE_SAFE_MAX_LEN}字)")
 
     return text
 
