@@ -78,44 +78,50 @@ def _comment_text(p):
     return p.get("one_liner") or p.get("reason") or "(コメントなし)"
 
 
-def _format_worth_reading_block(index, p):
+def _format_worth_reading_block(index, p, full=True):
+    if not full:
+        return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p['url']}\n\n"
     return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{_comment_text(p)}\n{p['url']}\n\n"
 
 
-def _format_abstract_only_block(index, p):
+def _format_abstract_only_block(index, p, full=True):
+    if not full:
+        return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{p['url']}\n\n"
     return f"[{index}] {_display_title(p)} (★{p.get('score', 0)})\n{_comment_text(p)}\n{p['url']}\n\n"
 
 
-_BLOCK_FORMATTERS = {
-    "must_read": _format_must_read_block,
+_DEGRADABLE_FORMATTERS = {
     "worth_reading": _format_worth_reading_block,
     "abstract_only": _format_abstract_only_block,
 }
 
 
-def _render_line_text(header, footer, alert_blocks, tier_groups, omitted_counts):
-    parts = list(alert_blocks)
-    index = 0
-    for category, group in tier_groups.items():
-        parts.append(f"――― {CATEGORY_LABELS[category]} ―――\n")
-        if not group and not omitted_counts.get(category):
-            parts.append("該当なし\n\n")
-            continue
-        formatter = _BLOCK_FORMATTERS[category]
-        for p in group:
-            index += 1
-            parts.append(formatter(index, p))
-        if omitted_counts.get(category):
-            parts.append(f"(文字数の都合で他{omitted_counts[category]}件省略 → Issue参照)\n\n")
-    return header + "".join(parts) + footer
+def _render_degradable_section(category, group, paper_state, omitted_count):
+    parts = [f"――― {CATEGORY_LABELS[category]} ―――\n"]
+    visible = [p for p in group if paper_state.get(id(p)) != "removed"]
+    if not visible and not omitted_count:
+        parts.append("該当なし\n\n")
+        return parts
+    formatter = _DEGRADABLE_FORMATTERS[category]
+    for i, p in enumerate(visible, start=1):
+        full = paper_state.get(id(p), "full") == "full"
+        parts.append(formatter(i, p, full=full))
+    if omitted_count:
+        parts.append(f"(文字数の都合で他{omitted_count}件省略 → Issue参照)\n\n")
+    return parts
 
 
 def build_line_text(papers, issue_url, date_str, notify_categories=None):
     """
     LINE用のテキストメッセージを組み立てる。基本は全件表示し、省略は行わない。
-    ただし合計がLINEの上限(5000字)に近づいた場合のみ、優先度の低いカテゴリ
-    (abstract_only→worth_reading)のスコアが低い論文から丸ごと間引く
-    (must_read・著者アラートは間引かない)。
+    合計がLINEの上限(5000字)に近づいた場合のみ、以下の順で段階的に情報量を
+    減らす(must_read・著者アラートは常に完全な形のまま、一切減らさない):
+      1. abstract_onlyのスコアが低い論文から、コメント(一言要約)だけを削り
+         タイトル・スコア・リンクは残す
+      2. worth_readingについても同様にコメントだけを削る
+      3. それでも収まらなければ、abstract_onlyをスコアが低い順に丸ごと省略する
+      4. それでも収まらなければ、worth_readingも同様に丸ごと省略する
+      5. 最終手段として、末尾を強制的に切り詰める
     notify_categoriesに含まれるカテゴリは、該当論文が0件でも見出しと
     「該当なし」を表示する(通知対象外のカテゴリについては何も表示しない)。
     """
@@ -132,25 +138,62 @@ def build_line_text(papers, issue_url, date_str, notify_categories=None):
 
     alert_blocks = [_format_alert_block(p) for p in alert_papers]
 
-    # カテゴリごとに論文リスト(スコア降順のまま)を保持しておき、必要な場合のみ
-    # 末尾(=スコアが低い方)から間引く
+    must_read_blocks = []
+    if "must_read" in tracked_categories:
+        must_read_group = [p for p in non_alert if p.get("category") == "must_read"]
+        must_read_blocks.append(f"――― {CATEGORY_LABELS['must_read']} ―――\n")
+        if not must_read_group:
+            must_read_blocks.append("該当なし\n\n")
+        else:
+            for i, p in enumerate(must_read_group, start=1):
+                must_read_blocks.append(_format_must_read_block(i, p))
+
+    # abstract_only/worth_readingはスコア降順のまま保持し、末尾(=スコアが低い方)
+    # から段階的に間引く。paper_stateは "full"(既定) -> "title_only" -> "removed"
     tier_groups = {
         category: [p for p in non_alert if p.get("category") == category]
-        for category in CATEGORY_TIER_ORDER
+        for category in ("worth_reading", "abstract_only")
         if category in tracked_categories
     }
+    paper_state = {}
     omitted_counts = {category: 0 for category in tier_groups}
 
-    text = _render_line_text(header, footer, alert_blocks, tier_groups, omitted_counts)
+    # 間引く順序のキュー: abstract_onlyのコメント削り(スコア低い順)→
+    # worth_readingのコメント削り→abstract_onlyの丸ごと省略→worth_readingの丸ごと省略
+    degrade_queue = []
+    for category in ("abstract_only", "worth_reading"):
+        for p in reversed(tier_groups.get(category, [])):
+            degrade_queue.append((category, p, "strip"))
+    for category in ("abstract_only", "worth_reading"):
+        for p in reversed(tier_groups.get(category, [])):
+            degrade_queue.append((category, p, "remove"))
 
-    drop_order = [c for c in ("abstract_only", "worth_reading") if c in tier_groups]
-    for category in drop_order:
-        while len(text) > LINE_SAFE_MAX_LEN and tier_groups[category]:
-            tier_groups[category].pop()
-            omitted_counts[category] += 1
-            text = _render_line_text(header, footer, alert_blocks, tier_groups, omitted_counts)
-        if len(text) <= LINE_SAFE_MAX_LEN:
-            break
+    def _render():
+        parts = list(alert_blocks) + list(must_read_blocks)
+        for category in ("worth_reading", "abstract_only"):
+            if category not in tier_groups:
+                continue
+            parts.extend(
+                _render_degradable_section(
+                    category, tier_groups[category], paper_state, omitted_counts[category]
+                )
+            )
+        return header + "".join(parts) + footer
+
+    text = _render()
+    qi = 0
+    while len(text) > LINE_SAFE_MAX_LEN and qi < len(degrade_queue):
+        category, p, action = degrade_queue[qi]
+        qi += 1
+        if action == "strip":
+            if paper_state.get(id(p), "full") == "full":
+                paper_state[id(p)] = "title_only"
+                text = _render()
+        else:
+            if paper_state.get(id(p)) != "removed":
+                paper_state[id(p)] = "removed"
+                omitted_counts[category] += 1
+                text = _render()
 
     if len(text) > LINE_MAX_LEN:
         print(
