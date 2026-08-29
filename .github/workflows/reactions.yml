@@ -1,0 +1,58 @@
+name: discord-reactions
+
+# 毎晩 7:30 JST (= 22:30 UTC) に、Discord に押されたリアクションを回収するワークフロー。
+# 毎朝の daily.yml とは独立しており、通知そのものは行わない。
+#   👍 → feedback.json に verdict="like"
+#   👎 → feedback.json に verdict="dislike"
+#   📖 → 解説書リクエストとしてログに出力する(生成機能は別タスク)
+# GitHub Actions の schedule は数十分遅延することがあります(公式仕様)。
+# 手動実行(workflow_dispatch)でテストする場合は、Actionsタブから
+# 「Run workflow」ボタンを押してください。DRY_RUN を true にすると
+# feedback.json / posted_messages.json を書き換えず、ログ出力のみで動作確認できます。
+
+on:
+  schedule:
+    - cron: '30 22 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'true にするとDRY_RUNモード(書き込みなし)で実行します'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write   # data/ 配下の状態ファイルをcommitするため
+
+jobs:
+  collect-reactions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 をセットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 依存関係をインストール
+        run: pip install -r requirements.txt
+
+      - name: リアクションを回収
+        env:
+          PYTHONUNBUFFERED: "1"
+          # 必須: Discord Bot Token と投稿先チャンネルID(GitHub Secretsに登録してください)
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          # 手動実行時にdry_run=trueが指定された場合のみDRY_RUNモードにする
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
+        run: python src/reactions.py
+
+      - name: 状態ファイルをcommit & push
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config user.name "arxiv-bot"
+          git config user.email "arxiv-bot@users.noreply.github.com"
+          git add data/feedback.json data/posted_messages.json
+          git diff --quiet --cached || git commit -m "chore: collect discord reactions $(date -u +'%Y-%m-%d')"
+          git push
