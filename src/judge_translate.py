@@ -106,7 +106,7 @@ def _build_batch_prompt(batch, research_profile, feedback_context, score_thresho
 
     return f"""あなたは理論物理学(素粒子論・重力理論)の専門家アシスタントです。
 以下の研究プロファイルを持つ研究者に、次の{n}件の論文それぞれが関連するかどうかを判定してください。
-「現在の研究テーマ」との関連を最重視してcategoryとscoreを判定してください。
+研究プロファイルに挙げられた研究領域との関連を重視してcategoryとscoreを判定してください。
 
 # 研究プロファイル
 {research_profile}
@@ -121,7 +121,7 @@ def _build_batch_prompt(batch, research_profile, feedback_context, score_thresho
 各論文について、以下を行え:
 1. 研究プロファイルとの関連度を 0〜10 の整数でスコア付けせよ(10が最も関連が高い)。
 2. 以下の4段階のいずれかにcategoryを分類せよ:
-   - "must_read": 現在の研究テーマに直接関係する。当日中に読むべき。
+   - "must_read": プロファイルの研究領域に直接該当し、手法・結果とも参考になる。当日中に読むべき。
    - "worth_reading": 関連分野で手法や結果が参考になる可能性がある。今週中に目を通す価値がある。
    - "abstract_only": 分野の動向として要約だけ把握すれば十分。
    - "ignore": 関連なし。
@@ -131,9 +131,9 @@ def _build_batch_prompt(batch, research_profile, feedback_context, score_thresho
    ただし物理の専門用語(replica trick, bulk reconstruction, quantum extremal surface等)は
    無理に和訳せず、慣用的なカタカナまたは英語のまま残してよい。
 5. reason には、この論文が具体的に何を主張・証明・計算しているかを1〜2文で書け。
-   「現在の研究テーマに関連するため」「〇〇や△△に直接関連する」のようにテーマ名を
+   「プロファイルの研究領域に関連するため」「〇〇や△△に直接関連する」のようにテーマ名を
    並べるだけの抽象的な理由は禁止する。必ず論文の中身(対象・手法・結果)に基づいて書くこと。
-   ただし、論文の中身が現在の研究テーマの核心と具体的に一致する場合
+   ただし、論文の中身がプロファイルの研究領域と具体的に一致する場合
    (例: Gödel時空を用いた具体的な解析を行っている、TTbar変形の具体的な計算を行っている等)
    に限り、その一致点も1文で書き加えてよい。
 6. one_liner には、この論文の内容(何を扱い、どんな手法で、どんな結果を得たか)を
