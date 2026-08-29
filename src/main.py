@@ -111,7 +111,10 @@ def main():
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     github_token = os.environ.get("GITHUB_TOKEN", "")
     gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
-    gemini_model = os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    # 既定モデル。GEMINI_MODEL を Secrets に登録すれば上書きできる。
+    # 2026-08-30 に gemini-2.5-flash から更新。gemini-3.7-flash / gemini-flash-latest は
+    # 無料枠では 503 が返るため採用していない(gemini-3.6-flash は安定して応答する)。
+    gemini_model = os.environ.get("GEMINI_MODEL") or "gemini-3.6-flash"
 
     now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
     date_str = now_jst.strftime("%Y-%m-%d")

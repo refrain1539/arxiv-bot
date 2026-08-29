@@ -40,7 +40,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
           # 必須: Gemini APIキー(GitHub Secretsに登録してください)
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 任意: モデル名を変更したい場合のみSecretsに登録(未設定ならgemini-2.5-flash)
+          # 任意: モデル名を変更したい場合のみSecretsに登録(未設定ならgemini-3.6-flash)
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           # LINE通知(第1優先)。未設定ならメールにフォールバックします
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}

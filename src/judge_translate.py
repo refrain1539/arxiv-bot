@@ -7,7 +7,14 @@ Gemini APIを使って、論文の関連度判定・日本語翻訳・4段階分
   429が解消しなくなるため、リクエスト数そのものを削減する。
 - バッチ間にsleepを入れてレート制限(RPM)も超えないようにする
 - 429 (レート制限) の場合は指数バックオフで最大3回リトライする
-- バッチ全体のJSONパースに失敗した場合、そのバッチの全論文をスコア0・category="ignore"
+- 応答は Gemini の構造化出力(responseMimeType + responseSchema)で受け取り、構文的に
+  正しいJSONを保証させる。モデルがスキーマを受け付けない場合(400)はスキーマなしで再試行する
+- それでもJSONが壊れている場合に備えて2段の保険を持つ:
+  (1) LaTeX由来の不正なエスケープ(\\infty, \\mathcal 等)をリテラルなバックスラッシュに修復
+  (2) 配列全体が復元できなければ、波括弧の対応を数えて1オブジェクトずつ救出する
+  これを入れる前は、1論文に含まれた1個のバックスラッシュでバッチ8件が丸ごと
+  ignore に落ちていた(2026-08-29 の本番実行では15バッチ中7バッチが全損)
+- 上記でもパースできなかったバッチは全論文をスコア0・category="ignore"
   として扱い処理を止めない
 - data/my_profile.md が存在する場合は、config.yml の interest_profile より優先して
   プロンプトに注入する(研究プロファイル注入。存在しなければ従来通りinterest_profileを使う)
@@ -30,6 +37,36 @@ VALID_CATEGORIES = {"must_read", "worth_reading", "abstract_only", "ignore"}
 CATEGORY_ORDER = {"must_read": 0, "worth_reading": 1, "abstract_only": 2, "ignore": 3}
 
 DEFAULT_BATCH_SIZE = 8
+
+# Gemini の構造化出力(responseSchema)。OpenAPI のサブセットで型名は大文字。
+RESPONSE_SCHEMA = {
+    "type": "ARRAY",
+    "items": {
+        "type": "OBJECT",
+        "properties": {
+            "index": {"type": "INTEGER"},
+            "score": {"type": "INTEGER"},
+            "category": {"type": "STRING", "enum": sorted(VALID_CATEGORIES)},
+            "title_ja": {"type": "STRING"},
+            "reason": {"type": "STRING"},
+            "abstract_ja": {"type": "STRING"},
+            "one_liner": {"type": "STRING"},
+            "check_points": {"type": "STRING"},
+            "suggested_action": {"type": "STRING"},
+        },
+        "required": [
+            "index",
+            "score",
+            "category",
+            "title_ja",
+            "reason",
+            "abstract_ja",
+            "one_liner",
+            "check_points",
+            "suggested_action",
+        ],
+    },
+}
 
 # パース失敗時などに使うデフォルト値
 DEFAULT_JUDGEMENT = {
@@ -143,7 +180,11 @@ def _build_batch_prompt(batch, research_profile, feedback_context, score_thresho
    場合のみ必須とし、それ以外は空文字列("")でよい。
    - check_points: 読む際に特に確認すべき箇所(セクション名、数式、前提条件など)
    - suggested_action: 読むために取るべき具体的な行動(所要時間の目安を含めてよい)
-8. 以下のJSON配列の形式のみを出力せよ。説明文やコードフェンス(```)は不要。
+8. 出力するJSON文字列の中でバックスラッシュ(\\)を使ってはならない。数式はLaTeXではなく
+   通常のテキストで書け(例: \\infty ではなく infinity、\\mathcal N ではなく N、
+   \\textsubscript は使わず添字はそのまま書く)。バックスラッシュはJSONのエスケープ文字であり、
+   不正なエスケープを含む応答は破棄される。
+9. 以下のJSON配列の形式のみを出力せよ。説明文やコードフェンス(```)は不要。
    配列の要素数は必ず論文の件数({n}件)と一致させ、"index"には論文番号
    (論文1なら1、論文2なら2、...)を入れること。全ての論文番号を過不足なく1回ずつ含めること。
 
@@ -151,8 +192,67 @@ def _build_batch_prompt(batch, research_profile, feedback_context, score_thresho
 """
 
 
+# JSONとして不正なエスケープ: \ の直後が許容文字でない、または \u の直後が16進4桁でない
+_INVALID_ESCAPE_RE = re.compile(r'\\(?:u(?![0-9a-fA-F]{4})|(?!["\\/bfnrtu]))')
+
+
+def repair_json_escapes(text):
+    """
+    JSON文字列中の不正なエスケープをリテラルなバックスラッシュに直す。
+    Geminiが理由や翻訳の中にLaTeX($Lw_{1+\\infty}$ 等)を書くと \\i が不正なエスケープになり、
+    json.loads が "Invalid \\escape" で失敗してバッチ全体が捨てられるため。
+    """
+    return _INVALID_ESCAPE_RE.sub(r"\\\\", text)
+
+
+def salvage_json_objects(text):
+    """
+    配列全体のパースに失敗したときの最終防衛線。波括弧の対応を数えて1オブジェクトずつ
+    取り出し、パースできたものだけを返す。1論文分が壊れていても残りを救う。
+    """
+    objects = []
+    depth = 0
+    start = None
+    in_string = False
+    escaped = False
+
+    for i, ch in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start is not None:
+                chunk = text[start : i + 1]
+                for candidate in (chunk, repair_json_escapes(chunk)):
+                    try:
+                        objects.append(json.loads(candidate))
+                        break
+                    except json.JSONDecodeError:
+                        continue
+                start = None
+
+    return objects
+
+
 def _extract_json_array(text):
-    """Gemini応答から JSON配列 部分を取り出す。```json フェンス付きにも対応。"""
+    """
+    Gemini応答から JSON配列 部分を取り出す。```json フェンス付きにも対応。
+    素のパースに失敗した場合は、不正エスケープの修復 → 1オブジェクトずつの救出、
+    の順に段階的にフォールバックする。すべて失敗した場合のみ例外を投げる。
+    """
     text = text.strip()
     fence_match = re.search(r"```(?:json)?\s*(\[.*\])\s*```", text, re.DOTALL)
     if fence_match:
@@ -162,7 +262,25 @@ def _extract_json_array(text):
         last = text.rfind("]")
         if first != -1 and last != -1:
             text = text[first : last + 1]
-    return json.loads(text)
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        parsed = json.loads(repair_json_escapes(text))
+        print("[judge_translate] 不正なエスケープを修復してパースしました")
+        return parsed
+    except json.JSONDecodeError:
+        pass
+
+    salvaged = salvage_json_objects(text)
+    if salvaged:
+        print(f"[judge_translate] 配列の復元に失敗しましたが、{len(salvaged)}件を個別に救出しました")
+        return salvaged
+
+    raise json.JSONDecodeError("JSON配列を復元できませんでした", text[:200], 0)
 
 
 def _resolve_category(parsed, score, score_threshold):
@@ -176,21 +294,40 @@ def _resolve_category(parsed, score, score_threshold):
     return "worth_reading" if score >= score_threshold else "ignore"
 
 
-def _call_gemini_api(prompt, api_key, model, max_retries=3):
-    """Gemini APIを呼び出し、応答テキストを返す。失敗時はNoneを返す。"""
-    url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
-    payload = {
+def _build_payload(prompt, with_schema):
+    generation_config = {"temperature": 0.2}
+    if with_schema:
+        generation_config["responseMimeType"] = "application/json"
+        generation_config["responseSchema"] = RESPONSE_SCHEMA
+    return {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.2},
+        "generationConfig": generation_config,
     }
+
+
+def _call_gemini_api(prompt, api_key, model, max_retries=3):
+    """
+    Gemini APIを呼び出し、応答テキストを返す。失敗時はNoneを返す。
+    構造化出力(responseSchema)付きで投げ、モデルが受け付けない場合(400)は
+    スキーマなしにフォールバックして再試行する。
+    """
+    url = f"{GEMINI_API_BASE}/{model}:generateContent?key={api_key}"
+    with_schema = True
 
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(url, json=payload, timeout=120)
+            resp = requests.post(url, json=_build_payload(prompt, with_schema), timeout=120)
             if resp.status_code == 429:
                 wait = 2 ** attempt
                 print(f"[judge_translate] Gemini 429(レート制限)。{wait}秒待って再試行します ({attempt}/{max_retries})")
                 time.sleep(wait)
+                continue
+            if resp.status_code == 400 and with_schema:
+                print(
+                    "[judge_translate] responseSchema が拒否されました(400)。"
+                    f"スキーマなしで再試行します: {resp.text[:200]}"
+                )
+                with_schema = False
                 continue
             resp.raise_for_status()
             data = resp.json()
