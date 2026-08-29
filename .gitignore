@@ -1,0 +1,11 @@
+# Python のバイトコードキャッシュ(実行のたびに再生成されるためコミット不要)
+__pycache__/
+*.py[cod]
+
+# 仮想環境
+.venv/
+venv/
+
+# 秘密情報(ローカルでの手動実行用。GitHub Actions では Secrets を使う)
+.env
+.env.local

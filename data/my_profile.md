@@ -45,10 +45,9 @@ flat space holography, Carrollian CFT (CCFT), celestial holography, BMS symmetry
 swing surface, null boundary, flat limit of AdS/CFT
 
 ### 時空の創発・テンソルネットワーク
-emergent spacetime from quantum information, path-integral optimization, cMERA,
-tensor network, surface/state correspondence, holographic renormalization group,
-p-adic AdS/CFT, quantum circuit interpretation of holography, quantum error
-correction in holography
+emergent spacetime from quantum information, cMERA, tensor network,
+surface/state correspondence, holographic renormalization group, p-adic AdS/CFT,
+quantum circuit interpretation of holography, quantum error correction in holography
 
 ### ブラックホール情報問題・ダイナミクス
 Page curve, island, Hayden-Preskill protocol, information recovery, scrambling,
