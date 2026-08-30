@@ -1,13 +1,21 @@
 """
 Discord のリアクションを回収してフィードバックに反映するモジュール。
 
-毎晩 .github/workflows/reactions.yml から実行され、以下を行う:
-  1. data/posted_messages.json から過去N日分の投稿を取り出す
-  2. 各メッセージについて 👍 👎 📖 を押したユーザーを取得する
+.github/workflows/reactions.yml から日中15分おきに実行され、以下を行う:
+  1. data/posted_messages.json から過去N日分(既定3日)の投稿を取り出す
+  2. まだ処理していないリアクションについてのみ、押したユーザーを取得する
      (GET /channels/{cid}/messages/{mid}/reactions/{emoji})
   3. 👍 → verdict="like"、👎 → verdict="dislike" として data/feedback.json に追記する
      (翌朝の Gemini 判定が feedback.json を読んで好みを学習する)
   4. 📖 が押された arxiv_id の一覧を返す(解説書生成は別タスクのため、ここでは返すだけ)
+
+15分おきのポーリングを前提とした設計:
+- 処理したリアクションは posted_messages.json の reactions_done に記録し、
+  次回以降は問い合わせ自体を行わない。落ち着いた論文は API を1回も叩かなくなるので、
+  何も押されていない時間帯の実行はほぼ無風で終わる
+- 状態に変化がなかった場合はファイルを書かない。ワークフロー側の
+  `git diff --quiet --cached` と合わせて、空コミットが積み上がらないようにする
+- 変化がないときのログは1行だけにする
 
 注意点:
 - Bot 自身が投稿直後に 📖 👍 👎 を付けているため、users を見て Bot の user_id を
@@ -16,8 +24,6 @@ Discord のリアクションを回収してフィードバックに反映する
   何もしない方が安全なので、回収自体を中止する
 - feedback.json への書き込みは既存の feedback.py の load_feedback / save_feedback を
   使う(feedback.py 自体は変更しない)
-- 同じ arxiv_id が既に feedback.json にある場合は追記しない。reactions.yml は
-  過去N日分を毎晩走査するため、これがないと同じ論文が何度も積み上がる
 
 環境変数:
   DISCORD_BOT_TOKEN  ... Discord Bot Token
@@ -35,8 +41,12 @@ from feedback import load_feedback, save_feedback
 from notify_discord import DISLIKE_EMOJI, LIKE_EMOJI, READ_EMOJI, discord_request
 from post_log import (
     POSTED_MESSAGES_PATH,
+    is_explained,
+    is_reaction_done,
     iter_recent,
     load_posted,
+    mark_reaction_done,
+    pending_explanations,
     prune_posted,
     save_posted,
 )
@@ -44,8 +54,10 @@ from post_log import (
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FEEDBACK_PATH = os.path.join(BASE_DIR, "data", "feedback.json")
 
-# 何日前までの投稿をリアクション回収の対象にするか
-LOOKBACK_DAYS = 7
+# 何日前までの投稿をリアクション回収の対象にするか。
+# 15分おきに走るため、1回の実行を軽くする目的で短くしている。
+# これより後に押されたリアクションは拾われない。
+LOOKBACK_DAYS = 3
 # 1メッセージ・1絵文字あたりに取得するユーザー数の上限(個人利用なので100で十分)
 REACTION_USER_LIMIT = 100
 
@@ -71,9 +83,7 @@ def fetch_reaction_users(channel_id, message_id, emoji, token):
     encoded = quote(emoji, safe="")
     path = f"/channels/{channel_id}/messages/{message_id}/reactions/{encoded}"
     try:
-        resp = discord_request(
-            "GET", path, token, params={"limit": REACTION_USER_LIMIT}
-        )
+        resp = discord_request("GET", path, token, params={"limit": REACTION_USER_LIMIT})
         users = resp.json()
         return users if isinstance(users, list) else []
     except requests.HTTPError as e:
@@ -98,12 +108,30 @@ def _has_human_reaction(users, bot_user_id):
     return False
 
 
+def _pending_kinds(entry):
+    """
+    このエントリについて、まだ問い合わせる必要があるリアクション種別を返す。
+
+    - 👍/👎 は、どちらか一方でも処理済みなら判定は確定しているので問い合わせない
+    - 📖 は、検出済み(read)または解説書生成済み(explained)なら問い合わせない
+    """
+    kinds = []
+    verdict_settled = is_reaction_done(entry, "like") or is_reaction_done(entry, "dislike")
+    if not verdict_settled:
+        kinds.append(("like", LIKE_EMOJI))
+        kinds.append(("dislike", DISLIKE_EMOJI))
+    if not (is_reaction_done(entry, "read") or is_explained(entry)):
+        kinds.append(("read", READ_EMOJI))
+    return kinds
+
+
 def scan_reactions(entries, token, bot_user_id, default_channel_id=None):
     """
-    (arxiv_id, entry) のリストを走査し、各論文のリアクション状況を返す。
+    (arxiv_id, entry) のリストを走査し、各論文の「未処理の」リアクション状況を返す。
 
     戻り値: {arxiv_id: {"entry": entry, "like": bool, "dislike": bool, "read": bool}}
-    Bot 自身のリアクションは除外済み。
+    値が True なのは「人間が押していて、かつ posted_messages.json 上で未処理」の場合だけ。
+    処理済みのリアクションは二重処理を防ぐため、問い合わせずに False とする。
     """
     result = {}
     for arxiv_id, entry in entries:
@@ -114,11 +142,7 @@ def scan_reactions(entries, token, bot_user_id, default_channel_id=None):
             continue
 
         status = {"entry": entry, "like": False, "dislike": False, "read": False}
-        for key, emoji in (
-            ("like", LIKE_EMOJI),
-            ("dislike", DISLIKE_EMOJI),
-            ("read", READ_EMOJI),
-        ):
+        for key, emoji in _pending_kinds(entry):
             users = fetch_reaction_users(channel_id, message_id, emoji, token)
             status[key] = _has_human_reaction(users, bot_user_id)
         result[arxiv_id] = status
@@ -130,7 +154,8 @@ def build_feedback_entries(scanned, existing_feedback, date_str):
     """
     リアクション状況から feedback.json に追記するエントリのリストを作る。
 
-    - 既に同じ arxiv_id のエントリがある場合は追記しない(毎晩の重複回収を防ぐ)
+    - 既に同じ arxiv_id のエントリがある場合は追記しない
+      (GitHub Issue 経由のフィードバックと重複させないための保険)
     - 👍 と 👎 の両方が押されている場合は like を優先する
       (後から気が変わって押し直した、と解釈する)
     - title は judge_translate.build_feedback_context が f["title"] を直接参照するため
@@ -164,10 +189,27 @@ def build_feedback_entries(scanned, existing_feedback, date_str):
 
 def get_read_requests(scanned):
     """
-    📖 が押された(= 解説書がほしい)論文の arxiv_id のリストを返す。
-    解説書の生成自体は別タスクのため、ここでは一覧を返すだけにとどめる。
+    今回の走査で新たに 📖 が検出された arxiv_id のリストを返す。
+    既に検出済みのものは scanned 上で False になっているため含まれない
+    (未処理分もまとめた一覧が欲しい場合は post_log.pending_explanations を使う)。
     """
     return [arxiv_id for arxiv_id, status in scanned.items() if status["read"]]
+
+
+def _mark_processed(posted, scanned):
+    """
+    今回検出したリアクションを処理済みとして記録する。
+    実際に1件でもフラグが変化したら True を返す(変化なしならファイルを書かない)。
+
+    feedback.json 側の重複ガードで追記されなかった論文もここで処理済みにする。
+    そうしないと、書かれることのないリアクションを毎回問い合わせ続けてしまう。
+    """
+    changed = False
+    for arxiv_id, status in scanned.items():
+        for kind in ("like", "dislike", "read"):
+            if status[kind]:
+                changed |= mark_reaction_done(posted, arxiv_id, kind)
+    return changed
 
 
 def collect_reactions(
@@ -182,7 +224,8 @@ def collect_reactions(
     """
     過去 days 日分の投稿からリアクションを回収し、feedback.json に反映する。
 
-    戻り値: (追記したfeedbackエントリのリスト, 📖が押されたarxiv_idのリスト)
+    戻り値: (追記したfeedbackエントリのリスト, 解説書が未生成の📖リクエストのリスト)
+    2つ目は今回の検出分だけでなく、過去に検出して未対応のものも含む待ち行列。
     DRY_RUN のときはファイルを書き換えず、回収結果だけを返す。
     """
     if now is None:
@@ -194,6 +237,12 @@ def collect_reactions(
         print("[reactions] DISCORD_BOT_TOKEN が未設定のため、リアクション回収をスキップします")
         return [], []
 
+    posted = load_posted(posted_path)
+    entries = iter_recent(posted, days, now=now)
+    if not entries:
+        print(f"[reactions] 過去{days}日以内の投稿がないため、何もしませんでした")
+        return [], []
+
     bot_user_id = get_bot_user_id(token)
     if bot_user_id is None:
         print(
@@ -202,44 +251,45 @@ def collect_reactions(
         )
         return [], []
 
-    posted = load_posted(posted_path)
-    entries = iter_recent(posted, days, now=now)
-    print(f"[reactions] 過去{days}日分の投稿{len(entries)}件を対象にリアクションを確認します")
-    if not entries:
-        return [], []
-
     scanned = scan_reactions(entries, token, bot_user_id, default_channel_id=channel_id)
 
     existing_feedback = load_feedback(feedback_path)
     new_entries = build_feedback_entries(scanned, existing_feedback, date_str)
-    read_ids = get_read_requests(scanned)
-
-    for entry in new_entries:
-        mark = "👍" if entry["verdict"] == "like" else "👎"
-        print(f"[reactions] {mark} {entry['arxiv_id']} {entry['title']}")
-    if read_ids:
-        print(f"[reactions] 📖 解説書リクエスト: {', '.join(read_ids)}")
+    new_reads = get_read_requests(scanned)
 
     if dry_run:
-        print(
-            f"[reactions] (DRY_RUN) feedback {len(new_entries)}件の追記と"
-            "posted_messages.json の更新をスキップしました"
-        )
-        return new_entries, read_ids
+        for entry in new_entries:
+            mark = "👍" if entry["verdict"] == "like" else "👎"
+            print(f"[reactions] (DRY_RUN) {mark} {entry['arxiv_id']} {entry['title']}")
+        if new_reads:
+            print(f"[reactions] (DRY_RUN) 📖 解説書リクエスト: {', '.join(new_reads)}")
+        if not new_entries and not new_reads:
+            print(f"[reactions] (DRY_RUN) 新しいリアクションはありませんでした (対象{len(entries)}件)")
+        return new_entries, pending_explanations(posted)
+
+    posted_changed = _mark_processed(posted, scanned)
 
     if new_entries:
         existing_feedback.extend(new_entries)
         save_feedback(feedback_path, existing_feedback)
-        print(f"[reactions] feedback.json に{len(new_entries)}件追記しました")
-    else:
-        print("[reactions] 新しいリアクションはありませんでした")
+        for entry in new_entries:
+            mark = "👍" if entry["verdict"] == "like" else "👎"
+            print(f"[reactions] {mark} {entry['arxiv_id']} {entry['title']}")
+    if new_reads:
+        print(f"[reactions] 📖 解説書リクエスト: {', '.join(new_reads)}")
 
     pruned = prune_posted(posted, now=now)
     if len(pruned) != len(posted):
         print(f"[reactions] 古い投稿記録を{len(posted) - len(pruned)}件削除しました")
-    save_posted(pruned, posted_path)
+        posted_changed = True
 
-    return new_entries, read_ids
+    if posted_changed:
+        save_posted(pruned, posted_path)
+    elif not new_entries:
+        # 15分おきに走るため、何も起きなかった実行のログは1行にとどめる
+        print(f"[reactions] 新しいリアクションはありませんでした (対象{len(entries)}件)")
+
+    return new_entries, pending_explanations(pruned)
 
 
 def main():
@@ -252,7 +302,6 @@ def main():
         channel_id=os.environ.get("DISCORD_CHANNEL_ID") or None,
         dry_run=dry_run,
     )
-    print("[reactions] 処理完了")
 
 
 if __name__ == "__main__":

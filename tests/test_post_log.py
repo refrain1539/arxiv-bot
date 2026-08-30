@@ -15,8 +15,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from post_log import (  # noqa: E402
     iter_recent,
+    is_explained,
+    is_reaction_done,
     load_posted,
+    mark_reaction_done,
+    pending_explanations,
     prune_posted,
+    reactions_done,
     record_post,
     save_posted,
 )
@@ -145,6 +150,114 @@ class TestIterRecent(unittest.TestCase):
         }
         result = iter_recent(posted, days=7, now=now)
         self.assertEqual(result, [])
+
+
+class TestReactionsDone(unittest.TestCase):
+    def test_missing_key_returns_empty_list(self):
+        self.assertEqual(reactions_done({}), [])
+
+    def test_non_list_value_returns_empty_list(self):
+        self.assertEqual(reactions_done({"reactions_done": "like"}), [])
+        self.assertEqual(reactions_done({"reactions_done": None}), [])
+
+    def test_normal_list_is_returned(self):
+        entry = {"reactions_done": ["like", "read"]}
+        self.assertEqual(reactions_done(entry), ["like", "read"])
+
+    def test_returned_list_is_a_copy(self):
+        entry = {"reactions_done": ["like"]}
+        result = reactions_done(entry)
+        result.append("read")
+        self.assertEqual(entry["reactions_done"], ["like"])
+
+
+class TestIsReactionDone(unittest.TestCase):
+    def test_kind_present(self):
+        entry = {"reactions_done": ["like", "read"]}
+        self.assertTrue(is_reaction_done(entry, "like"))
+
+    def test_kind_absent(self):
+        entry = {"reactions_done": ["like"]}
+        self.assertFalse(is_reaction_done(entry, "read"))
+
+    def test_missing_key(self):
+        self.assertFalse(is_reaction_done({}, "read"))
+
+
+class TestIsExplained(unittest.TestCase):
+    def test_true(self):
+        self.assertTrue(is_explained({"explained": True}))
+
+    def test_false(self):
+        self.assertFalse(is_explained({"explained": False}))
+
+    def test_missing_key(self):
+        self.assertFalse(is_explained({}))
+
+
+class TestMarkReactionDone(unittest.TestCase):
+    def test_new_reaction_returns_true_and_is_reflected(self):
+        posted = {"2507.00001": {"message_id": "1", "channel_id": "2", "date": "2026-08-30"}}
+        changed = mark_reaction_done(posted, "2507.00001", "like")
+        self.assertTrue(changed)
+        self.assertEqual(posted["2507.00001"]["reactions_done"], ["like"])
+
+    def test_already_done_returns_false_and_no_duplicate(self):
+        posted = {
+            "2507.00001": {
+                "message_id": "1",
+                "channel_id": "2",
+                "date": "2026-08-30",
+                "reactions_done": ["like"],
+            }
+        }
+        changed = mark_reaction_done(posted, "2507.00001", "like")
+        self.assertFalse(changed)
+        self.assertEqual(posted["2507.00001"]["reactions_done"], ["like"])
+
+    def test_missing_arxiv_id_returns_false_without_raising(self):
+        posted = {}
+        changed = mark_reaction_done(posted, "does_not_exist", "like")
+        self.assertFalse(changed)
+        self.assertEqual(posted, {})
+
+    def test_entry_not_dict_returns_false(self):
+        posted = {"2507.00001": "not a dict"}
+        changed = mark_reaction_done(posted, "2507.00001", "like")
+        self.assertFalse(changed)
+
+    def test_invalid_kind_raises_value_error(self):
+        posted = {"2507.00001": {"message_id": "1", "channel_id": "2", "date": "2026-08-30"}}
+        with self.assertRaises(ValueError):
+            mark_reaction_done(posted, "2507.00001", "love")
+
+
+class TestPendingExplanations(unittest.TestCase):
+    def test_only_read_and_unexplained_are_returned(self):
+        posted = {
+            "read_not_explained": {
+                "message_id": "1",
+                "channel_id": "2",
+                "date": "2026-08-30",
+                "reactions_done": ["read"],
+            },
+            "read_and_explained": {
+                "message_id": "3",
+                "channel_id": "4",
+                "date": "2026-08-30",
+                "reactions_done": ["read"],
+                "explained": True,
+            },
+            "not_read": {
+                "message_id": "5",
+                "channel_id": "6",
+                "date": "2026-08-30",
+                "reactions_done": ["like"],
+            },
+            "not_a_dict": "broken",
+        }
+        result = pending_explanations(posted)
+        self.assertEqual(result, ["read_not_explained"])
 
 
 if __name__ == "__main__":

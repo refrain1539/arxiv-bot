@@ -10,7 +10,7 @@ Discord側の設定とGitHub Secretsへの登録のみを扱います。
 
 通知は1論文につき1メッセージ・1embedで送られ、投稿後にBotが自動で📖👍👎の3つの
 リアクションを付けます。ユーザーが👍または👎を押すと、別ワークフロー
-(`.github/workflows/reactions.yml`、毎晩実行)がそれを回収して`data/feedback.json`に
+(`.github/workflows/reactions.yml`、日中15分おきに実行)がそれを回収して`data/feedback.json`に
 記録し、翌朝以降のGemini判定に反映されます。📖は「この論文の解説書がほしい」という
 意思表示用のリアクションですが、解説書を実際に生成する機能自体は別タスクでまだ
 実装されていません。
@@ -145,14 +145,20 @@ Secret欄に手順2でコピーしたTokenを貼り付けて「Add secret」を�
 > メッセージが投稿され、投稿されたメッセージに📖👍👎の3つのリアクションが
 > Botによって自動的に付いた状態になります。
 
-👍または👎を実際に押してみて、翌晩実行される`.github/workflows/reactions.yml`
-(Actionsタブ上の表示名は `discord-reactions`)が動くタイミングを待つか、同様に
+👍または👎を実際に押してみて、`.github/workflows/reactions.yml`
+(Actionsタブ上の表示名は `discord-reactions`)が動くのを待つか、同様に
 「Actions」タブから手動実行して、`data/feedback.json` に反映されることを
-確認してください。回収対象は `data/posted_messages.json` に記録された過去7日分の
-投稿なので、Discordに投稿してから7日以内に押す必要があります。
+確認してください。このワークフローは 10:00〜翌02:00 JST の間、15分おきに走ります。
 
 > **こうなればOK**: `data/feedback.json` に、リアクションを押した論文のIDと
 > 👍/👎の情報を含むエントリが追加されています。
+
+回収対象は `data/posted_messages.json` に記録された**過去3日以内**の投稿です。
+それより古い投稿に押しても拾われないので、リアクションは3日以内に付けてください。
+
+一度処理したリアクションは `posted_messages.json` の `reactions_done` に記録され、
+以降は問い合わせも行いません。そのため、あとから押し直して評価を変えることは
+できません(評価を変えたい場合は `data/feedback.json` を直接編集してください)。
 
 ## トラブルシューティング
 

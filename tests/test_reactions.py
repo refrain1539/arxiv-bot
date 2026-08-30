@@ -302,8 +302,8 @@ class TestCollectReactions(unittest.TestCase):
         new_entries, _ = self._call(fake)
 
         self.assertEqual(new_entries, [])
-        # /users/@me は呼ばれるが、リアクション取得は行われない
-        self.assertFalse(any("/reactions/" in c.args[1] for c in fake.call_args_list))
+        # 対象が0件と分かった時点で打ち切るため、API は一切叩かれない
+        fake.assert_not_called()
 
     def test_prunes_posted_messages_on_write(self):
         with open(self.posted_path, "w", encoding="utf-8") as f:
@@ -321,6 +321,187 @@ class TestCollectReactions(unittest.TestCase):
             saved = json.load(f)
         self.assertIn("2608.00001", saved)
         self.assertNotIn("2601.00001", saved)
+
+
+class TestSkipAlreadyProcessed(unittest.TestCase):
+    """15分おきに走るため、処理済みのリアクションは問い合わせ自体を行わない。"""
+
+    def _urls(self, fake):
+        return [call.args[1] for call in fake.call_args_list]
+
+    def test_settled_verdict_is_not_polled_again(self):
+        entry = dict(_entry("10"), reactions_done=["like"])
+        fake = _fake_api({("10", LIKE_ENCODED): [{"id": HUMAN_ID}]})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            scanned = scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+
+        # 判定済みなので、押されたままでも新規扱いにはしない
+        self.assertFalse(scanned["2608.00001"]["like"])
+        urls = self._urls(fake)
+        self.assertFalse(any(LIKE_ENCODED in u for u in urls))
+        self.assertFalse(any(DISLIKE_ENCODED in u for u in urls))
+        # 📖 はまだ未処理なので問い合わせる
+        self.assertTrue(any(READ_ENCODED in u for u in urls))
+
+    def test_dislike_is_not_polled_once_like_is_recorded(self):
+        entry = dict(_entry("10"), reactions_done=["dislike"])
+        fake = _fake_api({})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+        urls = self._urls(fake)
+        self.assertFalse(any(LIKE_ENCODED in u for u in urls))
+
+    def test_detected_read_is_not_polled_again(self):
+        entry = dict(_entry("10"), reactions_done=["read"])
+        fake = _fake_api({})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+        self.assertFalse(any(READ_ENCODED in u for u in self._urls(fake)))
+
+    def test_explained_entry_is_not_polled_for_read(self):
+        entry = dict(_entry("10"), explained=True)
+        fake = _fake_api({})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+        self.assertFalse(any(READ_ENCODED in u for u in self._urls(fake)))
+
+    def test_fully_settled_entry_costs_no_api_call(self):
+        entry = dict(_entry("10"), reactions_done=["like", "read"])
+        fake = _fake_api({})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+        fake.assert_not_called()
+
+
+class TestLookbackWindow(unittest.TestCase):
+    """1回の実行を軽くするため、走査対象は過去3日以内に限る。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.feedback_path = os.path.join(self.tmp.name, "feedback.json")
+        self.posted_path = os.path.join(self.tmp.name, "posted.json")
+        with open(self.feedback_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        self.addCleanup(self.tmp.cleanup)
+
+    def _run_with_post_dated(self, date):
+        with open(self.posted_path, "w", encoding="utf-8") as f:
+            json.dump({"2608.00001": _entry("10", date=date)}, f)
+        fake = _fake_api({("10", LIKE_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}]})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            return collect_reactions(
+                "tok",
+                feedback_path=self.feedback_path,
+                posted_path=self.posted_path,
+                now=NOW,
+            )
+
+    def test_default_lookback_is_three_days(self):
+        self.assertEqual(reactions.LOOKBACK_DAYS, 3)
+
+    def test_two_days_old_post_is_included(self):
+        new_entries, _ = self._run_with_post_dated("2026-08-28")
+        self.assertEqual(len(new_entries), 1)
+
+    def test_six_days_old_post_is_excluded(self):
+        """以前の7日設定なら拾われていた投稿が、3日設定では対象外になる。"""
+        new_entries, _ = self._run_with_post_dated("2026-08-24")
+        self.assertEqual(new_entries, [])
+
+
+class TestIdempotentRuns(unittest.TestCase):
+    """15分おきの再実行で、二重処理・空コミット・ログのノイズが出ないこと。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.feedback_path = os.path.join(self.tmp.name, "feedback.json")
+        self.posted_path = os.path.join(self.tmp.name, "posted.json")
+        with open(self.feedback_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        with open(self.posted_path, "w", encoding="utf-8") as f:
+            json.dump({"2608.00001": _entry("10", title="Sample Title")}, f)
+        self.addCleanup(self.tmp.cleanup)
+
+    def _call(self, reaction_map):
+        fake = _fake_api(reaction_map)
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            return collect_reactions(
+                "tok",
+                feedback_path=self.feedback_path,
+                posted_path=self.posted_path,
+                now=NOW,
+            )
+
+    def _read_json(self, path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_first_run_records_processed_flags(self):
+        self._call(
+            {
+                ("10", LIKE_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}],
+                ("10", READ_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}],
+            }
+        )
+        entry = self._read_json(self.posted_path)["2608.00001"]
+        self.assertIn("like", entry["reactions_done"])
+        self.assertIn("read", entry["reactions_done"])
+
+    def test_second_run_does_not_duplicate_feedback(self):
+        reaction_map = {("10", LIKE_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}]}
+        self._call(reaction_map)
+        new_entries, _ = self._call(reaction_map)
+
+        self.assertEqual(new_entries, [])
+        self.assertEqual(len(self._read_json(self.feedback_path)), 1)
+
+    def test_unchanged_run_does_not_rewrite_posted_file(self):
+        """変化がないときはファイルを書かない(空コミットを積まないため)。"""
+        save_mock = mock.Mock()
+        with mock.patch.object(reactions, "save_posted", save_mock):
+            self._call({})
+        save_mock.assert_not_called()
+
+    def test_verdict_already_in_feedback_is_still_marked_done(self):
+        """
+        GitHub Issue 経由で既に評価済みの論文は feedback.json に追記されないが、
+        処理済みにしておかないと毎回問い合わせ続けてしまう。
+        """
+        with open(self.feedback_path, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {
+                        "arxiv_id": "2608.00001",
+                        "title": "Sample Title",
+                        "verdict": "like",
+                        "date": "2026-08-29",
+                    }
+                ],
+                f,
+            )
+        new_entries, _ = self._call(
+            {("10", DISLIKE_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}]}
+        )
+
+        self.assertEqual(new_entries, [])
+        entry = self._read_json(self.posted_path)["2608.00001"]
+        self.assertIn("dislike", entry["reactions_done"])
+
+    def test_pending_explanations_survives_across_runs(self):
+        """📖 は解説書が作られるまで待ち行列に残り続ける。"""
+        self._call({("10", READ_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}]})
+        _, pending = self._call({})
+        self.assertEqual(pending, ["2608.00001"])
+
+    def test_explained_entry_leaves_the_queue(self):
+        posted = self._read_json(self.posted_path)
+        posted["2608.00001"]["reactions_done"] = ["read"]
+        posted["2608.00001"]["explained"] = True
+        with open(self.posted_path, "w", encoding="utf-8") as f:
+            json.dump(posted, f)
+
+        _, pending = self._call({})
+        self.assertEqual(pending, [])
 
 
 if __name__ == "__main__":

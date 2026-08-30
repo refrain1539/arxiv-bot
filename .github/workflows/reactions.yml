@@ -1,10 +1,15 @@
 name: discord-reactions
 
-# 毎晩 7:30 JST (= 22:30 UTC) に、Discord に押されたリアクションを回収するワークフロー。
+# 日中に15分おきで、Discord に押されたリアクションを回収するワークフロー。
 # 毎朝の daily.yml とは独立しており、通知そのものは行わない。
 #   👍 → feedback.json に verdict="like"
 #   👎 → feedback.json に verdict="dislike"
 #   📖 → 解説書リクエストとしてログに出力する(生成機能は別タスク)
+#
+# 1回処理したリアクションは posted_messages.json の reactions_done に記録され、
+# 次回以降は問い合わせ自体を行わない。そのため何も押されていない時間帯の実行は
+# ほぼ無風で終わり、状態ファイルに変化がなければcommitもしない。
+#
 # GitHub Actions の schedule は数十分遅延することがあります(公式仕様)。
 # 手動実行(workflow_dispatch)でテストする場合は、Actionsタブから
 # 「Run workflow」ボタンを押してください。DRY_RUN を true にすると
@@ -12,7 +17,7 @@ name: discord-reactions
 
 on:
   schedule:
-    - cron: '30 22 * * *'
+    - cron: '7,22,37,52 1-16 * * *'   # 10:00〜翌02:00 JST の間、15分おき
   workflow_dispatch:
     inputs:
       dry_run:
@@ -22,6 +27,12 @@ on:
 
 permissions:
   contents: write   # data/ 配下の状態ファイルをcommitするため
+
+# 15分間隔の実行が遅延して重なると、同じリアクションを2つのジョブが同時に処理し、
+# push が衝突する。同時に走るのは常に1つだけにする(待たされた実行は次回に任せる)。
+concurrency:
+  group: discord-reactions
+  cancel-in-progress: false
 
 jobs:
   collect-reactions:
@@ -34,6 +45,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'   # 15分おきに走るため、依存関係の再取得を避ける
 
       - name: 依存関係をインストール
         run: pip install -r requirements.txt
@@ -54,5 +66,11 @@ jobs:
           git config user.name "arxiv-bot"
           git config user.email "arxiv-bot@users.noreply.github.com"
           git add data/feedback.json data/posted_messages.json
-          git diff --quiet --cached || git commit -m "chore: collect discord reactions $(date -u +'%Y-%m-%d')"
-          git push
+          # 変化がなければ何もしない(15分おきに空コミットを積まないため)
+          if git diff --quiet --cached; then
+            echo "状態ファイルに変化がないため、commitをスキップしました"
+            exit 0
+          fi
+          git commit -m "chore: collect discord reactions $(date -u +'%Y-%m-%dT%H:%MZ')"
+          # daily.yml と push が競合した場合に備えて1度だけリベースして再試行する
+          git push || (git pull --rebase && git push)
