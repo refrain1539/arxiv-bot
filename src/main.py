@@ -6,9 +6,14 @@ arXiv hep-th 論文推薦Bot のエントリポイント。
   2. arXivから新着論文を取得し、著者ウォッチリストと照合
   3. Geminiで関連度判定・4段階分類(must_read/worth_reading/abstract_only/ignore)・翻訳
   4. 通知カテゴリで選別
-  5. LINE / メールで通知
-  6. GitHub Issueを作成(フィードバック収集用。ignore以外の全カテゴリを記録)
-  7. 状態ファイル (seen_ids.json / feedback.json) を更新
+  5. Discordで通知 (1論文1メッセージ。投稿後にBot自身が📖👍👎を付ける)
+  6. GitHub Issueを作成(ignore以外の全カテゴリの記録用。BibTeXもここに載る)
+  7. 状態ファイル (seen_ids.json / feedback.json / posted_messages.json) を更新
+
+フィードバックの経路は2つあり、どちらも feedback.json に集約される:
+  - Discordのリアクション(👍/👎) ... reactions.py が別ワークフローで回収する
+  - GitHub Issueへのコメント(`+1 -3`) ... 上記1でこのスクリプトが回収する
+同じ論文が二重に記録されることはない(arxiv_idで重複を弾いている)。
 
 環境変数 DRY_RUN=1 のときは、通知・Issue作成/close・状態ファイル保存を行わず、
 ログ出力のみで動作確認できる(テスト用)。
@@ -23,7 +28,8 @@ import yaml
 from arxiv_fetch import fetch_recent_papers, tag_author_alerts
 from feedback import collect_feedback, create_daily_issue, load_feedback, save_feedback
 from judge_translate import CATEGORY_ORDER, judge_and_translate_papers
-from notify import notify
+from notify_discord import notify_discord
+from post_log import load_posted, prune_posted, record_post, save_posted
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(BASE_DIR, "config.yml")
@@ -190,43 +196,29 @@ def main():
     notify_when_empty = config.get("notify_when_empty", False)
     should_notify = bool(notify_papers) or notify_when_empty
 
-    issue_url = None
+    posted_map = {}
 
     if should_notify:
         if dry_run:
             print("[main] (DRY_RUN) Issue作成をスキップしました")
         elif repo and github_token:
             try:
-                _, issue_url = create_daily_issue(repo, github_token, date_str, issue_papers)
+                # 作成したIssueのURLは feedback.py 側でログ出力される
+                create_daily_issue(repo, github_token, date_str, issue_papers)
             except Exception as e:
                 print(f"[main] Issue作成でエラーが発生しました: {e}")
         else:
             print("[main] GITHUB_REPOSITORY / GITHUB_TOKEN が未設定のため、Issue作成をスキップします")
 
-        if not dry_run:
-            env = {
-                "LINE_CHANNEL_ACCESS_TOKEN": os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"),
-                "LINE_USER_ID": os.environ.get("LINE_USER_ID"),
-                "GMAIL_ADDRESS": os.environ.get("GMAIL_ADDRESS"),
-                "GMAIL_APP_PASSWORD": os.environ.get("GMAIL_APP_PASSWORD"),
-                "MAIL_TO": os.environ.get("MAIL_TO"),
-            }
-            try:
-                notify(
-                    notify_papers,
-                    issue_url or "(Issue作成に失敗しました。リポジトリのIssue一覧をご確認ください)",
-                    date_str,
-                    env,
-                    always_email=config.get("always_email", False),
-                    notify_categories=notify_categories,
-                )
-            except Exception as e:
-                print(f"[main] 通知処理でエラーが発生しました: {e}")
-        else:
-            print("[main] (DRY_RUN) 通知をスキップしました。以下が送信予定の内容です:")
-            for p in notify_papers:
-                alert_mark = "🔔 " if p.get("author_alert") else ""
-                print(f"  - {alert_mark}[{p.get('category')}/{p.get('score')}] {p['title']}")
+        # notify_discord はDRY_RUNを自分で解釈し、送信せず送信予定の内容をログ出力する
+        discord_env = {
+            "DISCORD_BOT_TOKEN": os.environ.get("DISCORD_BOT_TOKEN"),
+            "DISCORD_CHANNEL_ID": os.environ.get("DISCORD_CHANNEL_ID"),
+        }
+        try:
+            posted_map = notify_discord(notify_papers, discord_env, date_str, dry_run=dry_run)
+        except Exception as e:
+            print(f"[main] Discord通知でエラーが発生しました: {e}")
     else:
         print("[main] 該当論文なし、かつ notify_when_empty=false のため通知をスキップします")
 
@@ -237,7 +229,24 @@ def main():
         seen_ids = prune_seen_ids(seen_ids)
         save_seen_ids(seen_ids)
         save_feedback(FEEDBACK_PATH, feedback_list)
-        print("[main] 状態ファイル (seen_ids.json / feedback.json) を更新しました")
+
+        # Discordに投稿したmessage_idを記録する。reactions.pyがこれを見て
+        # 👍/👎 を回収するため、ここで保存できないとリアクションが拾えなくなる。
+        if posted_map:
+            posted = load_posted()
+            for arxiv_id, entry in posted_map.items():
+                record_post(
+                    posted,
+                    arxiv_id,
+                    entry["message_id"],
+                    entry["channel_id"],
+                    entry["date"],
+                    entry["title"],
+                )
+            save_posted(prune_posted(posted))
+            print(f"[main] Discordの投稿記録を{len(posted_map)}件追加しました")
+
+        print("[main] 状態ファイル (seen_ids.json / feedback.json / posted_messages.json) を更新しました")
     else:
         print("[main] (DRY_RUN) 状態ファイルの保存をスキップしました")
 

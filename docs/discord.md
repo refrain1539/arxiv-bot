@@ -126,10 +126,10 @@ Secret欄に手順2でコピーしたTokenを貼り付けて「Add secret」を�
 
 ## 7. 動作確認
 
-> **先に確認**: この手順は、毎朝のワークフロー(`daily-arxiv`)からDiscord通知を
-> 呼び出す統合が済んでいることが前提です。統合前の状態でdaily-arxivを実行しても、
-> 通知はLINE/メールに送られるだけでDiscordには投稿されません。統合が済んでいるかは
-> `.github/workflows/daily.yml` に `DISCORD_BOT_TOKEN` の記述があるかで判断できます。
+> **先に確認**: arXiv は土日にアナウンスを行わないため、土曜・日曜に実行しても
+> 新着論文は0件になり、通知処理そのものが走りません(`config.yml` の
+> `notify_when_empty: false` のため)。Discordへの投稿まで確認したい場合は、
+> 平日、それも月曜以降の朝に実行してください。
 
 リポジトリの「Actions」タブを開き、対象のワークフロー(daily-arxiv)を選んで
 「Run workflow」をクリックします。`dry_run` に `true` を指定して実行してください。

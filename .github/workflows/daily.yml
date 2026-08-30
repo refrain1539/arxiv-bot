@@ -42,13 +42,9 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # 任意: モデル名を変更したい場合のみSecretsに登録(未設定ならgemini-3.6-flash)
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
-          # LINE通知(第1優先)。未設定ならメールにフォールバックします
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
-          # メール通知(第2優先・フォールバック)
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          MAIL_TO: ${{ secrets.MAIL_TO }}
+          # Discord通知。設定手順は docs/discord.md を参照してください
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
           # Issue作成・フィードバック回収用(追加設定不要)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -61,6 +57,6 @@ jobs:
         run: |
           git config user.name "arxiv-bot"
           git config user.email "arxiv-bot@users.noreply.github.com"
-          git add data/seen_ids.json data/feedback.json
+          git add data/seen_ids.json data/feedback.json data/posted_messages.json
           git diff --quiet --cached || git commit -m "chore: update bot state $(date -u +'%Y-%m-%d')"
           git push
