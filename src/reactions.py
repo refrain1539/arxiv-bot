@@ -32,19 +32,28 @@ Discord のリアクションを回収してフィードバックに反映する
 """
 
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 import requests
 
+from explain import generate_explanation
 from feedback import load_feedback, save_feedback
-from notify_discord import DISLIKE_EMOJI, LIKE_EMOJI, READ_EMOJI, discord_request
+from notify_discord import (
+    DISLIKE_EMOJI,
+    LIKE_EMOJI,
+    READ_EMOJI,
+    discord_request,
+    send_file_reply,
+)
 from post_log import (
     POSTED_MESSAGES_PATH,
     is_explained,
     is_reaction_done,
     iter_recent,
     load_posted,
+    mark_explained,
     mark_reaction_done,
     pending_explanations,
     prune_posted,
@@ -60,6 +69,9 @@ FEEDBACK_PATH = os.path.join(BASE_DIR, "data", "feedback.json")
 LOOKBACK_DAYS = 3
 # 1メッセージ・1絵文字あたりに取得するユーザー数の上限(個人利用なので100で十分)
 REACTION_USER_LIMIT = 100
+# 1回の実行で生成する解説書の上限。1本あたり数分かかるため、15分間隔の実行が
+# 詰まらないよう絞る。溢れた分は次回以降の実行で処理される。
+MAX_EXPLANATIONS_PER_RUN = 2
 
 
 def get_bot_user_id(token):
@@ -212,6 +224,99 @@ def _mark_processed(posted, scanned):
     return changed
 
 
+def _explanation_filename(arxiv_id):
+    """arxiv_id には hep-th/9711200 のように / が入りうるので、安全な名前に直す。"""
+    return re.sub(r"[^0-9A-Za-z.]", "_", arxiv_id) + ".html"
+
+
+def generate_and_post_explanations(
+    posted,
+    token,
+    api_key,
+    default_channel_id=None,
+    limit=MAX_EXPLANATIONS_PER_RUN,
+    dry_run=False,
+):
+    """
+    📖 が押されて未生成の論文について、解説書を作り、元メッセージへの返信として
+    HTMLを添付する。
+
+    戻り値: (投稿できた件数, postedが変化したかどうかのbool)
+
+    失敗の扱い:
+      transient(429・ネットワーク不調) ... explained を立てずに次回の実行に回す
+      permanent(PDFが大きすぎる・400)  ... 理由を返信して explained を立てる。
+                                            立てないと毎回同じ失敗を繰り返すため。
+    """
+    pending = pending_explanations(posted)
+    if not pending:
+        return 0, False
+
+    if not api_key:
+        print(f"[reactions] GEMINI_API_KEY が未設定のため、解説書{len(pending)}件の生成を見送ります")
+        return 0, False
+
+    print(f"[reactions] 解説書の生成対象: {len(pending)}件 (今回は最大{limit}件まで処理します)")
+
+    sent = 0
+    changed = False
+    for arxiv_id in pending[:limit]:
+        entry = posted.get(arxiv_id) or {}
+        message_id = entry.get("message_id")
+        channel_id = entry.get("channel_id") or default_channel_id
+        if not message_id or not channel_id:
+            print(f"[reactions] message_id / channel_id が無いため解説書を送れません: {arxiv_id}")
+            continue
+
+        if dry_run:
+            print(f"[reactions] (DRY_RUN) 解説書を生成・返信する予定でした: {arxiv_id}")
+            continue
+
+        page, error = generate_explanation(
+            arxiv_id, api_key, title=entry.get("title")
+        )
+
+        if page is None and error == "transient":
+            print(f"[reactions] 一時的な失敗のため、次回の実行で再試行します: {arxiv_id}")
+            continue
+
+        try:
+            if page is None:
+                send_file_reply(
+                    channel_id,
+                    message_id,
+                    token,
+                    _explanation_filename(arxiv_id),
+                    b"",
+                    text=(
+                        "📖 解説書を生成できませんでした"
+                        "(PDFが大きすぎるか、モデルが受け付けませんでした)。"
+                    ),
+                )
+            else:
+                send_file_reply(
+                    channel_id,
+                    message_id,
+                    token,
+                    _explanation_filename(arxiv_id),
+                    page.encode("utf-8"),
+                    text="📖 解説書です。ダウンロードしてブラウザで開いてください(数式は自動で組版されます)。",
+                )
+                sent += 1
+        except Exception as e:
+            # 送信に失敗した場合は explained を立てず、次回の実行で作り直す
+            print(f"[reactions] 解説書の返信に失敗しました ({arxiv_id}): {e}")
+            continue
+
+        changed |= mark_explained(posted, arxiv_id)
+
+    remaining = len(pending) - min(len(pending), limit)
+    if remaining > 0:
+        print(f"[reactions] 残り{remaining}件は次回以降の実行で処理します")
+
+    return sent, changed
+
+
 def collect_reactions(
     token,
     channel_id=None,
@@ -220,6 +325,7 @@ def collect_reactions(
     posted_path=POSTED_MESSAGES_PATH,
     dry_run=False,
     now=None,
+    gemini_api_key=None,
 ):
     """
     過去 days 日分の投稿からリアクションを回収し、feedback.json に反映する。
@@ -265,6 +371,9 @@ def collect_reactions(
             print(f"[reactions] (DRY_RUN) 📖 解説書リクエスト: {', '.join(new_reads)}")
         if not new_entries and not new_reads:
             print(f"[reactions] (DRY_RUN) 新しいリアクションはありませんでした (対象{len(entries)}件)")
+        generate_and_post_explanations(
+            posted, token, gemini_api_key, default_channel_id=channel_id, dry_run=True
+        )
         return new_entries, pending_explanations(posted)
 
     posted_changed = _mark_processed(posted, scanned)
@@ -277,6 +386,19 @@ def collect_reactions(
             print(f"[reactions] {mark} {entry['arxiv_id']} {entry['title']}")
     if new_reads:
         print(f"[reactions] 📖 解説書リクエスト: {', '.join(new_reads)}")
+
+    # 📖 が押された論文の解説書を生成し、元メッセージへの返信として添付する。
+    # 直前に検出した分と、過去に検出して未生成の分をまとめて処理する。
+    sent, explain_changed = generate_and_post_explanations(
+        posted,
+        token,
+        gemini_api_key,
+        default_channel_id=channel_id,
+        dry_run=dry_run,
+    )
+    posted_changed |= explain_changed
+    if sent:
+        print(f"[reactions] 解説書を{sent}件返信しました")
 
     pruned = prune_posted(posted, now=now)
     if len(pruned) != len(posted):
@@ -301,6 +423,7 @@ def main():
         token=os.environ.get("DISCORD_BOT_TOKEN", ""),
         channel_id=os.environ.get("DISCORD_CHANNEL_ID") or None,
         dry_run=dry_run,
+        gemini_api_key=os.environ.get("GEMINI_API_KEY", ""),
     )
 
 

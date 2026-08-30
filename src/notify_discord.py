@@ -18,6 +18,7 @@ Discord 通知モジュール(Bot Token による REST 送信のみ)。
 DRY_RUN=1 のときは送信せず、送信予定の内容をログ出力するだけにする(main.py の流儀に合わせる)。
 """
 
+import json
 import time
 from urllib.parse import quote
 
@@ -58,12 +59,26 @@ MAX_RETRY_WAIT_SEC = 60
 SEND_INTERVAL_SEC = 0.5
 
 TIMEOUT_SEC = 30
+# ファイル送信は本文投稿より時間がかかるため、専用のタイムアウトを設ける
+UPLOAD_TIMEOUT_SEC = 120
 
 
 def _headers(token):
     return {
         "Authorization": f"Bot {token}",
         "Content-Type": "application/json",
+        "User-Agent": "arxiv-hep-th-bot",
+    }
+
+
+def _multipart_headers(token):
+    """
+    ファイル添付(multipart/form-data)用のヘッダ。
+    Content-Type は requests が boundary 付きで自動生成するため、
+    ここでは含めない(_headers() の application/json をそのまま使うと壊れる)。
+    """
+    return {
+        "Authorization": f"Bot {token}",
         "User-Agent": "arxiv-hep-th-bot",
     }
 
@@ -313,3 +328,76 @@ def notify_discord(papers, env, date_str, dry_run=False):
 
     print(f"[notify_discord] {len(posted)}件を投稿しました")
     return posted
+
+
+def send_file_reply(channel_id, message_id, token, filename, file_bytes,
+                     text="", dry_run=False):
+    """
+    既存メッセージへの返信として、ファイルを添付したメッセージを送る。
+
+    📖 リアクションを受けて生成した解説書(HTML)を、元の論文メッセージへの
+    返信として投稿するために使う。multipart/form-data で送るため、
+    application/json 前提の discord_request / _headers はそのまま使えない。
+
+    message_reference.fail_if_not_exists を False にしているのは、元メッセージが
+    削除されていても返信ではなく通常メッセージとして投稿させ、解説書自体は
+    失わないようにするため。
+
+    429 (レート制限) のリトライ方針は discord_request と同じ(_retry_after_seconds を
+    使い、MAX_RETRIES 回まで待って再試行し、使い切ったら最後のレスポンスで
+    raise_for_status する)。discord_request 自体は json ボディ専用のためここでは
+    使わず、ループを自前で書いている。
+
+    戻り値: 送信したメッセージのID(str)。DRY_RUN のときは送信せず None を返す。
+    """
+    if dry_run:
+        print(
+            f"[notify_discord] (DRY_RUN) 返信予定: {filename} ({len(file_bytes)}バイト)"
+        )
+        return None
+
+    url = f"{DISCORD_API_BASE}/channels/{channel_id}/messages"
+    payload = {
+        "content": text,
+        "message_reference": {
+            "message_id": str(message_id),
+            "channel_id": str(channel_id),
+            "fail_if_not_exists": False,
+        },
+        "attachments": [{"id": 0, "filename": filename}],
+    }
+    data = {"payload_json": json.dumps(payload, ensure_ascii=False)}
+    files = {"files[0]": (filename, file_bytes, "text/html")}
+
+    last_resp = None
+    for attempt in range(MAX_RETRIES + 1):
+        resp = requests.request(
+            "POST",
+            url,
+            headers=_multipart_headers(token),
+            data=data,
+            files=files,
+            timeout=UPLOAD_TIMEOUT_SEC,
+        )
+        last_resp = resp
+        if resp.status_code == 429:
+            wait = _retry_after_seconds(resp)
+            print(
+                f"[notify_discord] レート制限(429)を受けました。{wait}秒待って再試行します "
+                f"({attempt + 1}/{MAX_RETRIES})"
+            )
+            if attempt < MAX_RETRIES:
+                time.sleep(wait)
+                continue
+            break
+        resp.raise_for_status()
+        message_id_out = str(resp.json()["id"])
+        print(f"[notify_discord] 解説書を返信しました: message_id={message_id_out}")
+        return message_id_out
+
+    print(
+        f"[notify_discord] レート制限の再試行回数({MAX_RETRIES}回)を使い切りました: "
+        f"POST /channels/{channel_id}/messages (ファイル添付)"
+    )
+    last_resp.raise_for_status()
+    return str(last_resp.json()["id"])

@@ -146,6 +146,22 @@ def mark_reaction_done(posted, arxiv_id, kind):
     return True
 
 
+def mark_explained(posted, arxiv_id):
+    """posted[arxiv_id]に"explained": Trueを立てる(破壊的更新)。
+
+    戻り値は実際に変化したかどうかのbool。mark_reaction_doneと同じく、
+    「変化がないときはファイルを書かない・commitしない」ために使う。
+    arxiv_idが無い/dictでない場合と、既に立っている場合はFalseを返す。
+    """
+    entry = posted.get(arxiv_id)
+    if not isinstance(entry, dict):
+        return False
+    if is_explained(entry):
+        return False
+    entry["explained"] = True
+    return True
+
+
 def pending_explanations(posted):
     """📖(read)が押されたがまだ解説書を作っていないarxiv_idのリストを返す。
 

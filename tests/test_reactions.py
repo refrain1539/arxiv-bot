@@ -504,5 +504,114 @@ class TestIdempotentRuns(unittest.TestCase):
         self.assertEqual(pending, [])
 
 
+class TestGenerateAndPostExplanations(unittest.TestCase):
+    """📖 が押された論文の解説書を生成し、元メッセージへの返信として添付する。"""
+
+    def _posted(self, **flags):
+        entry = dict(_entry("10", title="Sample Title"), reactions_done=["read"])
+        entry.update(flags)
+        return {"2608.00001": entry}
+
+    def _run(self, posted, generate_result, api_key="gkey", **kwargs):
+        gen = mock.Mock(return_value=generate_result)
+        send = mock.Mock(return_value="555")
+        with mock.patch.object(reactions, "generate_explanation", gen), mock.patch.object(
+            reactions, "send_file_reply", send
+        ):
+            sent, changed = reactions.generate_and_post_explanations(
+                posted, "tok", api_key, **kwargs
+            )
+        return sent, changed, gen, send
+
+    def test_filename_is_sanitised(self):
+        self.assertEqual(reactions._explanation_filename("hep-th/9711200"), "hep_th_9711200.html")
+        self.assertEqual(reactions._explanation_filename("2608.00001"), "2608.00001.html")
+
+    def test_nothing_pending_does_nothing(self):
+        posted = {"2608.00001": _entry("10")}  # read が押されていない
+        sent, changed, gen, send = self._run(posted, ("<html>", None))
+        self.assertEqual((sent, changed), (0, False))
+        gen.assert_not_called()
+        send.assert_not_called()
+
+    def test_missing_api_key_skips_generation(self):
+        sent, changed, gen, send = self._run(self._posted(), ("<html>", None), api_key="")
+        self.assertEqual((sent, changed), (0, False))
+        gen.assert_not_called()
+
+    def test_success_attaches_html_and_marks_explained(self):
+        posted = self._posted()
+        sent, changed, gen, send = self._run(posted, ("<!doctype html>解説", None))
+
+        self.assertEqual((sent, changed), (1, True))
+        self.assertTrue(posted["2608.00001"]["explained"])
+
+        args = send.call_args.args
+        self.assertEqual(args[0], "999")            # channel_id
+        self.assertEqual(args[1], "10")             # 元メッセージのID(=返信先)
+        self.assertEqual(args[3], "2608.00001.html")
+        self.assertEqual(args[4], "<!doctype html>解説".encode("utf-8"))
+
+    def test_transient_failure_is_retried_next_run(self):
+        posted = self._posted()
+        sent, changed, gen, send = self._run(posted, (None, "transient"))
+
+        self.assertEqual((sent, changed), (0, False))
+        send.assert_not_called()
+        # explained が立たないので、次回の実行でまた対象になる
+        self.assertNotIn("explained", posted["2608.00001"])
+        self.assertEqual(reactions.pending_explanations(posted), ["2608.00001"])
+
+    def test_permanent_failure_replies_and_stops_retrying(self):
+        posted = self._posted()
+        sent, changed, gen, send = self._run(posted, (None, "permanent"))
+
+        self.assertEqual((sent, changed), (0, True))
+        send.assert_called_once()
+        self.assertIn("生成できませんでした", send.call_args.kwargs["text"])
+        # 同じ失敗を毎回繰り返さないよう、処理済みにする
+        self.assertTrue(posted["2608.00001"]["explained"])
+        self.assertEqual(reactions.pending_explanations(posted), [])
+
+    def test_send_failure_leaves_it_pending(self):
+        posted = self._posted()
+        gen = mock.Mock(return_value=("<html>", None))
+        send = mock.Mock(side_effect=requests.ConnectionError("boom"))
+        with mock.patch.object(reactions, "generate_explanation", gen), mock.patch.object(
+            reactions, "send_file_reply", send
+        ):
+            sent, changed = reactions.generate_and_post_explanations(posted, "tok", "gkey")
+
+        self.assertEqual((sent, changed), (0, False))
+        self.assertEqual(reactions.pending_explanations(posted), ["2608.00001"])
+
+    def test_limit_caps_work_per_run(self):
+        posted = {}
+        for i in range(5):
+            posted[f"2608.0000{i}"] = dict(
+                _entry(str(10 + i), title=f"P{i}"), reactions_done=["read"]
+            )
+        sent, changed, gen, send = self._run(posted, ("<html>", None), limit=2)
+
+        self.assertEqual(sent, 2)
+        self.assertEqual(gen.call_count, 2)
+        self.assertEqual(len(reactions.pending_explanations(posted)), 3)
+
+    def test_dry_run_generates_nothing(self):
+        posted = self._posted()
+        sent, changed, gen, send = self._run(posted, ("<html>", None), dry_run=True)
+
+        self.assertEqual((sent, changed), (0, False))
+        gen.assert_not_called()
+        send.assert_not_called()
+        self.assertNotIn("explained", posted["2608.00001"])
+
+    def test_entry_without_message_id_is_skipped(self):
+        posted = {"2608.00001": {"date": "2026-08-29", "reactions_done": ["read"]}}
+        sent, changed, gen, send = self._run(posted, ("<html>", None))
+        self.assertEqual((sent, changed), (0, False))
+        gen.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

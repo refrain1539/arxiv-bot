@@ -37,6 +37,8 @@ concurrency:
 jobs:
   collect-reactions:
     runs-on: ubuntu-latest
+    # 解説書の生成で長引いても、concurrency グループを塞ぎ続けないよう上限を切る
+    timeout-minutes: 30
     steps:
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
@@ -56,6 +58,9 @@ jobs:
           # 必須: Discord Bot Token と投稿先チャンネルID(GitHub Secretsに登録してください)
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          # 📖 が押された論文の解説書生成に使う(未設定なら生成をスキップする)
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
           # 手動実行時にdry_run=trueが指定された場合のみDRY_RUNモードにする
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '0' }}
         run: python src/reactions.py

@@ -15,6 +15,8 @@ import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+import json
+
 import notify_discord  # noqa: E402
 from notify_discord import (  # noqa: E402
     EMBED_DESCRIPTION_MAX,
@@ -23,6 +25,7 @@ from notify_discord import (  # noqa: E402
     add_reactions,
     build_embed,
     notify_discord as notify_discord_func,
+    send_file_reply,
     send_paper,
     suppress_preview,
 )
@@ -278,6 +281,64 @@ class TestNotifyDiscord(unittest.TestCase):
         with mock.patch.object(notify_discord.requests, "request", fake):
             self.assertEqual(notify_discord_func([], self.env, "2026-08-30"), {})
         fake.assert_not_called()
+
+
+class TestSendFileReply(unittest.TestCase):
+    def test_posts_multipart_reply_and_returns_message_id(self):
+        fake = mock.Mock(return_value=FakeResponse(json_data={"id": 999888777}))
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            message_id = send_file_reply(
+                "999", "111", "tok", "paper.html", b"<html></html>", text="解説書です"
+            )
+
+        self.assertEqual(message_id, "999888777")
+        self.assertIsInstance(message_id, str)
+
+        args, kwargs = fake.call_args
+        self.assertEqual(args[0], "POST")
+        self.assertEqual(args[1], "https://discord.com/api/v10/channels/999/messages")
+
+        # Authorization は付くが、Content-Type は requests に multipart の
+        # boundary を自動生成させるため含めてはいけない
+        headers = kwargs["headers"]
+        self.assertEqual(headers["Authorization"], "Bot tok")
+        self.assertNotIn("Content-Type", headers)
+
+        self.assertEqual(
+            kwargs["files"]["files[0]"], ("paper.html", b"<html></html>", "text/html")
+        )
+
+        payload = json.loads(kwargs["data"]["payload_json"])
+        self.assertEqual(payload["content"], "解説書です")
+        self.assertEqual(payload["message_reference"]["message_id"], "111")
+        self.assertEqual(payload["message_reference"]["channel_id"], "999")
+        self.assertFalse(payload["message_reference"]["fail_if_not_exists"])
+        self.assertEqual(payload["attachments"], [{"id": 0, "filename": "paper.html"}])
+
+    def test_dry_run_does_not_send(self):
+        fake = mock.Mock()
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            message_id = send_file_reply(
+                "999", "111", "tok", "paper.html", b"<html></html>", dry_run=True
+            )
+        self.assertIsNone(message_id)
+        fake.assert_not_called()
+
+    def test_429_waits_retry_after_and_retries(self):
+        responses = [
+            FakeResponse(status_code=429, json_data={"retry_after": 3.0}),
+            FakeResponse(json_data={"id": "123"}),
+        ]
+        fake = mock.Mock(side_effect=responses)
+        sleep = mock.Mock()
+        with mock.patch.object(notify_discord.requests, "request", fake), mock.patch.object(
+            notify_discord.time, "sleep", sleep
+        ):
+            message_id = send_file_reply("999", "111", "tok", "paper.html", b"data")
+
+        self.assertEqual(message_id, "123")
+        self.assertEqual(fake.call_count, 2)
+        sleep.assert_called_once_with(3.0)
 
 
 if __name__ == "__main__":
