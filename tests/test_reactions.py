@@ -8,6 +8,7 @@ Bot自身のリアクションの除外・feedback.json への追記と重複防
 
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -54,10 +55,21 @@ class FakeResponse:
             raise error
 
 
-def _fake_api(reaction_map, bot_ok=True):
+EMOJI_BY_ENCODED = {
+    LIKE_ENCODED: "👍",
+    DISLIKE_ENCODED: "👎",
+    READ_ENCODED: "📖",
+}
+
+
+def _fake_api(reaction_map, bot_ok=True, message_fetch_status=200):
     """
     URL に応じた応答を返すダミー。
     reaction_map: {(message_id, 絵文字のURLエンコード): [user dict, ...]}
+
+    主経路(GET /messages/{mid})と、フォールバック経路
+    (GET /messages/{mid}/reactions/{emoji})の両方を、同じ reaction_map から作る。
+    message_fetch_status に 200 以外を渡すと、主経路だけを失敗させられる。
     """
 
     def handler(method, url, **kwargs):
@@ -65,9 +77,33 @@ def _fake_api(reaction_map, bot_ok=True):
             if not bot_ok:
                 return FakeResponse(status_code=401)
             return FakeResponse(json_data={"id": BOT_ID})
+
+        # フォールバック経路: 絵文字ごとの users
         for (message_id, emoji), users in reaction_map.items():
             if f"/messages/{message_id}/reactions/{emoji}" in url:
                 return FakeResponse(json_data=users)
+        if "/reactions/" in url:
+            return FakeResponse(json_data=[])
+
+        # 主経路: メッセージそのものを取得し、count と me を返す
+        match = re.search(r"/messages/([^/]+)$", url)
+        if match:
+            if message_fetch_status != 200:
+                return FakeResponse(status_code=message_fetch_status)
+            mid = match.group(1)
+            reactions = []
+            for (message_id, encoded), users in reaction_map.items():
+                if message_id != mid:
+                    continue
+                reactions.append(
+                    {
+                        "emoji": {"name": EMOJI_BY_ENCODED[encoded]},
+                        "count": len(users),
+                        "me": any(str(u.get("id")) == BOT_ID for u in users),
+                    }
+                )
+            return FakeResponse(json_data={"id": mid, "reactions": reactions})
+
         return FakeResponse(json_data=[])
 
     return mock.Mock(side_effect=handler)
@@ -337,11 +373,34 @@ class TestSkipAlreadyProcessed(unittest.TestCase):
 
         # 判定済みなので、押されたままでも新規扱いにはしない
         self.assertFalse(scanned["2608.00001"]["like"])
-        urls = self._urls(fake)
-        self.assertFalse(any(LIKE_ENCODED in u for u in urls))
-        self.assertFalse(any(DISLIKE_ENCODED in u for u in urls))
-        # 📖 はまだ未処理なので問い合わせる
-        self.assertTrue(any(READ_ENCODED in u for u in urls))
+        # 📖 が未処理なのでメッセージは1回だけ取得する(絵文字ごとには引かない)
+        self.assertEqual(len(self._urls(fake)), 1)
+        self.assertTrue(self._urls(fake)[0].endswith("/messages/10"))
+
+    def test_one_api_call_per_message(self):
+        """3種類まとめて判定するため、1メッセージあたりの呼び出しは1回。"""
+        entry = _entry("10")
+        fake = _fake_api({("10", LIKE_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}]})
+        with mock.patch.object(notify_discord.requests, "request", fake):
+            scanned = scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+
+        self.assertEqual(len(self._urls(fake)), 1)
+        self.assertTrue(scanned["2608.00001"]["like"])
+
+    def test_falls_back_to_per_emoji_when_message_fetch_fails(self):
+        entry = _entry("10")
+        fake = _fake_api(
+            {("10", LIKE_ENCODED): [{"id": BOT_ID}, {"id": HUMAN_ID}]},
+            message_fetch_status=500,
+        )
+        with mock.patch.object(notify_discord.requests, "request", fake), mock.patch.object(
+            notify_discord.time, "sleep", mock.Mock()
+        ):
+            scanned = scan_reactions([("2608.00001", entry)], "tok", BOT_ID)
+
+        # 主経路が失敗しても、絵文字ごとの users 取得で正しく判定できる
+        self.assertTrue(scanned["2608.00001"]["like"])
+        self.assertTrue(any(LIKE_ENCODED in u for u in self._urls(fake)))
 
     def test_dislike_is_not_polled_once_like_is_recorded(self):
         entry = dict(_entry("10"), reactions_done=["dislike"])
@@ -396,16 +455,24 @@ class TestLookbackWindow(unittest.TestCase):
                 now=NOW,
             )
 
-    def test_default_lookback_is_three_days(self):
-        self.assertEqual(reactions.LOOKBACK_DAYS, 3)
+    def test_default_lookback_is_two_weeks(self):
+        self.assertEqual(reactions.LOOKBACK_DAYS, 14)
 
     def test_two_days_old_post_is_included(self):
         new_entries, _ = self._run_with_post_dated("2026-08-28")
         self.assertEqual(len(new_entries), 1)
 
-    def test_six_days_old_post_is_excluded(self):
-        """以前の7日設定なら拾われていた投稿が、3日設定では対象外になる。"""
+    def test_six_days_old_post_is_included(self):
+        """数日前の投稿に後から押したリアクションも拾えること。"""
         new_entries, _ = self._run_with_post_dated("2026-08-24")
+        self.assertEqual(len(new_entries), 1)
+
+    def test_thirteen_days_old_post_is_included(self):
+        new_entries, _ = self._run_with_post_dated("2026-08-17")
+        self.assertEqual(len(new_entries), 1)
+
+    def test_twenty_days_old_post_is_excluded(self):
+        new_entries, _ = self._run_with_post_dated("2026-08-10")
         self.assertEqual(new_entries, [])
 
 

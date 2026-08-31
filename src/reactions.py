@@ -66,8 +66,9 @@ FEEDBACK_PATH = os.path.join(BASE_DIR, "data", "feedback.json")
 # 何日前までの投稿をリアクション回収の対象にするか。
 # 15分おきに走るため、1回の実行を軽くする目的で短くしている。
 # これより後に押されたリアクションは拾われない。
-LOOKBACK_DAYS = 3
-# 1メッセージ・1絵文字あたりに取得するユーザー数の上限(個人利用なので100で十分)
+LOOKBACK_DAYS = 14
+# 1メッセージ・1絵文字あたりに取得するユーザー数の上限(個人利用なので100で十分)。
+# フォールバック経路でのみ使う。
 REACTION_USER_LIMIT = 100
 # 1回の実行で生成する解説書の上限。1本あたり数分かかるため、15分間隔の実行が
 # 詰まらないよう絞る。溢れた分は次回以降の実行で処理される。
@@ -87,9 +88,51 @@ def get_bot_user_id(token):
         return None
 
 
+def fetch_message_reactions(channel_id, message_id, token):
+    """
+    メッセージを1回取得し、絵文字ごとの「人間が押した数」を返す。
+
+    GET /channels/{cid}/messages/{mid} のレスポンスには reactions が入っており、
+    count(Bot自身の分を含む) と me(Bot自身が押したか) が分かる。絵文字ごとに
+    users を引くと1メッセージあたり3回の呼び出しになるが、この方法なら1回で済む。
+    走査対象を過去14日に広げてもAPIの負荷が増えすぎないよう、こちらを主経路にしている。
+
+    戻り値: {絵文字: 人間が押した数} / 取得に失敗した場合は None
+            (メッセージが削除されている場合は空dict)
+    """
+    path = f"/channels/{channel_id}/messages/{message_id}"
+    try:
+        data = discord_request("GET", path, token).json()
+    except requests.HTTPError as e:
+        status = getattr(e.response, "status_code", None)
+        if status == 404:
+            # メッセージが削除されている。リアクションは無いものとして扱う
+            return {}
+        print(f"[reactions] メッセージの取得に失敗しました (message_id={message_id}): {e}")
+        return None
+    except Exception as e:
+        print(f"[reactions] メッセージの取得に失敗しました (message_id={message_id}): {e}")
+        return None
+
+    counts = {}
+    for reaction in data.get("reactions") or []:
+        if not isinstance(reaction, dict):
+            continue
+        name = (reaction.get("emoji") or {}).get("name")
+        if not name:
+            continue
+        count = reaction.get("count") or 0
+        if reaction.get("me"):
+            # Bot 自身が投稿直後に付けた分を差し引く
+            count -= 1
+        counts[name] = max(0, count)
+    return counts
+
+
 def fetch_reaction_users(channel_id, message_id, emoji, token):
     """
     指定メッセージの指定絵文字にリアクションしたユーザーのリストを取得する。
+    fetch_message_reactions が失敗したときのフォールバック経路として使う。
     メッセージが削除されている(404)などの場合は空リストを返す。
     """
     encoded = quote(emoji, safe="")
@@ -144,6 +187,9 @@ def scan_reactions(entries, token, bot_user_id, default_channel_id=None):
     戻り値: {arxiv_id: {"entry": entry, "like": bool, "dislike": bool, "read": bool}}
     値が True なのは「人間が押していて、かつ posted_messages.json 上で未処理」の場合だけ。
     処理済みのリアクションは二重処理を防ぐため、問い合わせずに False とする。
+
+    未処理のリアクションが1つでもあるメッセージについては、メッセージを1回取得して
+    3種類まとめて判定する。すべて処理済みのメッセージは1回もAPIを叩かない。
     """
     result = {}
     for arxiv_id, entry in entries:
@@ -154,9 +200,21 @@ def scan_reactions(entries, token, bot_user_id, default_channel_id=None):
             continue
 
         status = {"entry": entry, "like": False, "dislike": False, "read": False}
-        for key, emoji in _pending_kinds(entry):
-            users = fetch_reaction_users(channel_id, message_id, emoji, token)
-            status[key] = _has_human_reaction(users, bot_user_id)
+        pending = _pending_kinds(entry)
+        if not pending:
+            result[arxiv_id] = status
+            continue
+
+        counts = fetch_message_reactions(channel_id, message_id, token)
+        if counts is None:
+            # メッセージ取得に失敗したときだけ、絵文字ごとの users 取得に切り替える
+            for key, emoji in pending:
+                users = fetch_reaction_users(channel_id, message_id, emoji, token)
+                status[key] = _has_human_reaction(users, bot_user_id)
+        else:
+            for key, emoji in pending:
+                status[key] = counts.get(emoji, 0) > 0
+
         result[arxiv_id] = status
 
     return result
