@@ -1,1 +1,50 @@
-{}
+{
+  "2608.27731": {
+    "message_id": "1544012572469100696",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Self-Dual Yang-Mills in AdS$_4$"
+  },
+  "2608.28531": {
+    "message_id": "1544012584032936090",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Positivity constraints on the dynamics of cusped impurities in CFTs"
+  },
+  "2608.27563": {
+    "message_id": "1544012593046495253",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "AdS/CFT, Ultralimits and Baby universes"
+  },
+  "2608.27956": {
+    "message_id": "1544012600029741140",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Holographic Ensembles in Type IIB"
+  },
+  "2608.27640": {
+    "message_id": "1544012610075230209",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "A geometric resolution limit from vacuum entanglement"
+  },
+  "2608.27627": {
+    "message_id": "1544012619260760234",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "The Late-time Ramp of the Double-Scaled SYK Model from the large-$n$ tail of Cactus Diagram"
+  },
+  "2608.27594": {
+    "message_id": "1544012627846496257",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Positive Geometry of Yang-Mills Correlators"
+  },
+  "2608.28333": {
+    "message_id": "1544012638218887191",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Stress-Testing Swampland Bounds with Class S Theories"
+  }
+}
