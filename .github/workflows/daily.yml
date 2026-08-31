@@ -1,6 +1,14 @@
 name: daily-arxiv
 
-# 毎朝 7:00 JST (= 22:00 UTC) に自動実行するワークフロー。
+# 毎日 11:30 JST (= 02:30 UTC) に自動実行するワークフロー。
+#
+# この時刻は arXiv の announce に合わせている。arXiv は投稿を日〜木の 20:00 ET に
+# announce し、arXiv API は announce 済みの論文しか返さない。20:00 ET を JST に直すと
+#   夏 (EDT, UTC-4): 09:00 JST / 冬 (EST, UTC-5): 10:00 JST
+# となる(ET は夏時間があるが UTC には無いため、年に2回1時間ずれる)。
+# 11:30 JST なら夏で2.5時間、冬でも1.5時間の余裕があり、その朝の分を当日中に拾える。
+# 以前の 7:00 JST は直近の announce から約21時間後で、前日の分を見ていた。
+# GitHub Actions の schedule の遅延は「後ろにずれる」方向なので、この設計では安全側に働く。
 # GitHub Actions の schedule は数十分遅延することがあります(公式仕様)。
 # 手動実行(workflow_dispatch)でテストする場合は、Actionsタブから
 # 「Run workflow」ボタンを押してください。DRY_RUN を true にすると
@@ -8,7 +16,7 @@ name: daily-arxiv
 
 on:
   schedule:
-    - cron: '0 22 * * *'
+    - cron: '30 2 * * *'   # 11:30 JST。arXiv の announce (20:00 ET) の後になるよう設定
   workflow_dispatch:
     inputs:
       dry_run:
