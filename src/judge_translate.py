@@ -38,6 +38,11 @@ CATEGORY_ORDER = {"must_read": 0, "worth_reading": 1, "abstract_only": 2, "ignor
 
 DEFAULT_BATCH_SIZE = 8
 
+# 1バッチ(既定8件)のアブストラクト全訳まで生成させるため、応答には時間がかかる。
+# 120秒では読み取りタイムアウトが頻発したため(2026-08-31 の実行で3バッチが該当。
+# いずれもリトライで復帰したが、実行時間が13分に伸びた)、余裕を持たせている。
+GEMINI_TIMEOUT_SEC = 240
+
 # Gemini の構造化出力(responseSchema)。OpenAPI のサブセットで型名は大文字。
 RESPONSE_SCHEMA = {
     "type": "ARRAY",
@@ -316,7 +321,9 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
 
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.post(url, json=_build_payload(prompt, with_schema), timeout=120)
+            resp = requests.post(
+                url, json=_build_payload(prompt, with_schema), timeout=GEMINI_TIMEOUT_SEC
+            )
             if resp.status_code == 429:
                 wait = 2 ** attempt
                 print(f"[judge_translate] Gemini 429(レート制限)。{wait}秒待って再試行します ({attempt}/{max_retries})")

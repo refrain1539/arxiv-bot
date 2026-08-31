@@ -19,6 +19,14 @@ import requests
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 USER_AGENT = "arxiv-hep-th-bot/1.0 (personal use; GitHub Actions)"
 
+# 取得失敗時の待ち時間。arXiv は混雑時に 429 を返すことがあり、3秒固定・3回では
+# 足りずに「新着0件」で終わることがあった(2026-08-31 の定期実行で発生)。
+# 指数バックオフにして 5 -> 10 -> 20 -> 40 秒と待つ。
+RETRY_BASE_WAIT_SEC = 5
+MAX_RETRY_WAIT_SEC = 120
+# arXiv の応答は混雑時に遅くなるため、読み取りのタイムアウトは長めに取る
+REQUEST_TIMEOUT_SEC = 60
+
 # AtomフィードとarXiv拡張の名前空間
 NS = {
     "atom": "http://www.w3.org/2005/Atom",
@@ -26,12 +34,29 @@ NS = {
 }
 
 
+def _retry_wait_seconds(error, attempt):
+    """
+    再試行までの待ち時間を決める。
+    429 で Retry-After が返っていればそれに従い、無ければ指数バックオフにする。
+    """
+    resp = getattr(error, "response", None)
+    if resp is not None:
+        retry_after = getattr(resp, "headers", {}) or {}
+        value = retry_after.get("Retry-After")
+        if value is not None:
+            try:
+                return max(0.0, min(float(value), MAX_RETRY_WAIT_SEC))
+            except (TypeError, ValueError):
+                pass
+    return min(RETRY_BASE_WAIT_SEC * (2 ** (attempt - 1)), MAX_RETRY_WAIT_SEC)
+
+
 def _build_search_query(categories):
     """config.yml の categories リストから search_query 文字列を組み立てる。"""
     return " OR ".join(f"cat:{c}" for c in categories)
 
 
-def fetch_recent_papers(categories, hours=48, max_results=200, retries=3):
+def fetch_recent_papers(categories, hours=48, max_results=200, retries=4):
     """
     arXiv API から新着論文を取得する。
 
@@ -57,13 +82,17 @@ def fetch_recent_papers(categories, hours=48, max_results=200, retries=3):
     xml_text = None
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(url, headers=headers, timeout=30)
+            resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SEC)
             resp.raise_for_status()
             xml_text = resp.text
             break
         except Exception as e:
             print(f"[arxiv_fetch] arXiv API呼び出し失敗 (試行{attempt}/{retries}): {e}")
-            time.sleep(3)
+            if attempt >= retries:
+                break
+            wait = _retry_wait_seconds(e, attempt)
+            print(f"[arxiv_fetch] {wait:.0f}秒待って再試行します")
+            time.sleep(wait)
 
     if xml_text is None:
         print("[arxiv_fetch] arXiv APIから取得できませんでした。空リストを返します。")
