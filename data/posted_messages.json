@@ -3,7 +3,12 @@
     "message_id": "1544012572469100696",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "Self-Dual Yang-Mills in AdS$_4$"
+    "title": "Self-Dual Yang-Mills in AdS$_4$",
+    "reactions_done": [
+      "dislike",
+      "read"
+    ],
+    "explained": true
   },
   "2608.28531": {
     "message_id": "1544012584032936090",
@@ -15,36 +20,54 @@
     "message_id": "1544012593046495253",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "AdS/CFT, Ultralimits and Baby universes"
+    "title": "AdS/CFT, Ultralimits and Baby universes",
+    "reactions_done": [
+      "like"
+    ]
   },
   "2608.27956": {
     "message_id": "1544012600029741140",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "Holographic Ensembles in Type IIB"
+    "title": "Holographic Ensembles in Type IIB",
+    "reactions_done": [
+      "dislike"
+    ]
   },
   "2608.27640": {
     "message_id": "1544012610075230209",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "A geometric resolution limit from vacuum entanglement"
+    "title": "A geometric resolution limit from vacuum entanglement",
+    "reactions_done": [
+      "dislike"
+    ]
   },
   "2608.27627": {
     "message_id": "1544012619260760234",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "The Late-time Ramp of the Double-Scaled SYK Model from the large-$n$ tail of Cactus Diagram"
+    "title": "The Late-time Ramp of the Double-Scaled SYK Model from the large-$n$ tail of Cactus Diagram",
+    "reactions_done": [
+      "dislike"
+    ]
   },
   "2608.27594": {
     "message_id": "1544012627846496257",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "Positive Geometry of Yang-Mills Correlators"
+    "title": "Positive Geometry of Yang-Mills Correlators",
+    "reactions_done": [
+      "dislike"
+    ]
   },
   "2608.28333": {
     "message_id": "1544012638218887191",
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
-    "title": "Stress-Testing Swampland Bounds with Class S Theories"
+    "title": "Stress-Testing Swampland Bounds with Class S Theories",
+    "reactions_done": [
+      "dislike"
+    ]
   }
 }

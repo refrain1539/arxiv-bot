@@ -88,5 +88,47 @@
     "title": "Quantum Fisher information of the Klein--Gordon, $φ^4$, and Dirac vacua",
     "verdict": "like",
     "date": "2026-07-31"
+  },
+  {
+    "arxiv_id": "2608.27731",
+    "title": "Self-Dual Yang-Mills in AdS$_4$",
+    "verdict": "dislike",
+    "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.27563",
+    "title": "AdS/CFT, Ultralimits and Baby universes",
+    "verdict": "like",
+    "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.27956",
+    "title": "Holographic Ensembles in Type IIB",
+    "verdict": "dislike",
+    "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.27640",
+    "title": "A geometric resolution limit from vacuum entanglement",
+    "verdict": "dislike",
+    "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.27627",
+    "title": "The Late-time Ramp of the Double-Scaled SYK Model from the large-$n$ tail of Cactus Diagram",
+    "verdict": "dislike",
+    "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.27594",
+    "title": "Positive Geometry of Yang-Mills Correlators",
+    "verdict": "dislike",
+    "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.28333",
+    "title": "Stress-Testing Swampland Bounds with Class S Theories",
+    "verdict": "dislike",
+    "date": "2026-09-01"
   }
 ]
