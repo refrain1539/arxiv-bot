@@ -224,8 +224,20 @@ def main():
 
     # --- 5. 状態ファイル更新 ---
     if not dry_run:
+        # Geminiが判定できなかった論文はseen_idsに入れず、次回の実行で再評価する。
+        # 全件を無条件に既読にすると、APIの一時的な失敗(429など)で落ちた論文が
+        # 永久に失われる(2026-09-01に4バッチ32件がこれで失われた)。
+        # 判定できなかった論文はarXivのlookback窓(96時間)から外れるまで再挑戦される。
+        judged_ok = {p["id"] for p in judged if not p.get("judge_failed")}
+        skipped = [p for p in new_papers if p["id"] not in judged_ok]
         for p in new_papers:
-            seen_ids[p["id"]] = date_str
+            if p["id"] in judged_ok:
+                seen_ids[p["id"]] = date_str
+        if skipped:
+            print(
+                f"[main] 判定できなかった{len(skipped)}件はseen_idsに登録せず、"
+                "次回の実行で再評価します"
+            )
         seen_ids = prune_seen_ids(seen_ids)
         save_seen_ids(seen_ids)
         save_feedback(FEEDBACK_PATH, feedback_list)

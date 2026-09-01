@@ -43,6 +43,13 @@ DEFAULT_BATCH_SIZE = 8
 # いずれもリトライで復帰したが、実行時間が13分に伸びた)、余裕を持たせている。
 GEMINI_TIMEOUT_SEC = 240
 
+# 429(レート制限)からの回復待ち。無料枠の制限はRPM(1分あたり)なので、
+# 秒単位の短い待機では枠が戻らない。30/60/90秒と待つ。
+GEMINI_RETRY_BASE_WAIT_SEC = 30
+GEMINI_MAX_RETRY_WAIT_SEC = 120
+# バッチ間の間隔。RPMを超えないよう、8秒(=7.5RPM相当)では足りなかったため広げた
+DEFAULT_BATCH_SLEEP_SEC = 15
+
 # Gemini の構造化出力(responseSchema)。OpenAPI のサブセットで型名は大文字。
 RESPONSE_SCHEMA = {
     "type": "ARRAY",
@@ -73,7 +80,11 @@ RESPONSE_SCHEMA = {
     },
 }
 
-# パース失敗時などに使うデフォルト値
+# パース失敗時などに使うデフォルト値。
+# judge_failed=True は「Geminiが判定できなかった」ことを表し、
+# 「判定した結果 ignore だった」とは区別する。main.py はこのフラグを見て
+# seen_ids への登録を見送り、次回の実行で再評価できるようにする
+# (これが無いと、APIの一時的な失敗で論文が永久に失われる)。
 DEFAULT_JUDGEMENT = {
     "score": 0,
     "category": "ignore",
@@ -83,6 +94,7 @@ DEFAULT_JUDGEMENT = {
     "one_liner": "",
     "check_points": "",
     "suggested_action": "",
+    "judge_failed": True,
 }
 
 
@@ -310,6 +322,27 @@ def _build_payload(prompt, with_schema):
     }
 
 
+def _gemini_retry_delay(resp, attempt):
+    """
+    429 のときに待つ秒数を決める。
+
+    無料枠の制限は「1分あたりのリクエスト数(RPM)」なので、2/4/8秒のような
+    短い待機では枠が回復せず、3回とも失敗してバッチ丸ごと落とすことになる
+    (2026-09-01 の実行で4バッチ・32件がこれで ignore 扱いになった)。
+    Gemini は 429 のボディに retryDelay を返すことがあるのでそれを優先し、
+    無ければ 30/60/90 秒と待つ。
+    """
+    try:
+        for detail in resp.json().get("error", {}).get("details", []) or []:
+            value = detail.get("retryDelay")
+            if value:
+                seconds = float(str(value).rstrip("s"))
+                return max(1.0, min(seconds, GEMINI_MAX_RETRY_WAIT_SEC))
+    except Exception:
+        pass
+    return min(GEMINI_RETRY_BASE_WAIT_SEC * attempt, GEMINI_MAX_RETRY_WAIT_SEC)
+
+
 def _call_gemini_api(prompt, api_key, model, max_retries=3):
     """
     Gemini APIを呼び出し、応答テキストを返す。失敗時はNoneを返す。
@@ -325,8 +358,8 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
                 url, json=_build_payload(prompt, with_schema), timeout=GEMINI_TIMEOUT_SEC
             )
             if resp.status_code == 429:
-                wait = 2 ** attempt
-                print(f"[judge_translate] Gemini 429(レート制限)。{wait}秒待って再試行します ({attempt}/{max_retries})")
+                wait = _gemini_retry_delay(resp, attempt)
+                print(f"[judge_translate] Gemini 429(レート制限)。{wait:.0f}秒待って再試行します ({attempt}/{max_retries})")
                 time.sleep(wait)
                 continue
             if resp.status_code == 400 and with_schema:
@@ -349,6 +382,8 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
 def _judgement_from_item(item, score_threshold):
     score = int(item.get("score", 0))
     judgement = dict(DEFAULT_JUDGEMENT)
+    # Geminiの応答から作られた判定なので、失敗フラグを落とす
+    judgement["judge_failed"] = False
     judgement["score"] = score
     judgement["category"] = _resolve_category(item, score, score_threshold)
     judgement["reason"] = str(item.get("reason", ""))
@@ -387,7 +422,7 @@ def judge_and_translate_papers(
     model,
     score_threshold,
     batch_size=DEFAULT_BATCH_SIZE,
-    sleep_sec=8,
+    sleep_sec=DEFAULT_BATCH_SLEEP_SEC,
 ):
     """
     論文リストをbatch_size件ずつまとめてGeminiに投げ、スコア・4段階分類・翻訳・
