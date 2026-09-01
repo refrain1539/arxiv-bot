@@ -143,5 +143,53 @@
     "reactions_done": [
       "dislike"
     ]
+  },
+  "2608.29816": {
+    "message_id": "1544291162616107041",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "BMN Spread Complexity Across Phase Transitions"
+  },
+  "2608.29627": {
+    "message_id": "1544291170610581565",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Genuine Multi-Entropy in Abelian Chern--Simons Theory: Exact Key-Ring Collapse and Its Breakdown for Generic Link States"
+  },
+  "2608.29329": {
+    "message_id": "1544291177497366600",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Inequalities and Positivity in Modular Flowed Entanglement Entropy"
+  },
+  "2608.29686": {
+    "message_id": "1544291185080795167",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Latent Geometry and the Emergence of Lorentzian Time in Matrix Quantum Mechanics"
+  },
+  "2608.29594": {
+    "message_id": "1544291191682498631",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Higher-Spin dS/CFT beyond minimal type-A, and the doubled nature of de Sitter space"
+  },
+  "2608.28789": {
+    "message_id": "1544291199144296469",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Acceleration and Rotation in Three Dimensions"
+  },
+  "2608.28755": {
+    "message_id": "1544291205536550955",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "A Quasi-local Entropy for Black Hole Space-times"
+  },
+  "2608.29806": {
+    "message_id": "1544291212994023514",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-01",
+    "title": "Two Languages for the Same Resonance: From Nuclear Decay to Black-Hole Ringdown"
   }
 }
