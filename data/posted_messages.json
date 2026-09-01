@@ -78,7 +78,8 @@
     "reactions_done": [
       "like",
       "read"
-    ]
+    ],
+    "explained": true
   },
   "2608.30852": {
     "message_id": "1544192679384981555",
