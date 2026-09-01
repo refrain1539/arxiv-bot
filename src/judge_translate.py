@@ -343,6 +343,27 @@ def _gemini_retry_delay(resp, attempt):
     return min(GEMINI_RETRY_BASE_WAIT_SEC * attempt, GEMINI_MAX_RETRY_WAIT_SEC)
 
 
+def _quota_reason(resp):
+    """
+    429 応答から、どの制限に当たったのか(1分あたりか、1日あたりか)を読み取る。
+    RPM なら待てば回復するが、RPD(1日あたり)なら翌日まで回復しないため、
+    ログで区別できるようにしておく。
+    """
+    try:
+        violations = []
+        for detail in resp.json().get("error", {}).get("details", []) or []:
+            for violation in detail.get("violations", []) or []:
+                metric = violation.get("quotaMetric") or violation.get("quotaId") or ""
+                if metric:
+                    violations.append(str(metric))
+        if violations:
+            return " / ".join(sorted(set(violations)))
+        message = resp.json().get("error", {}).get("message", "")
+        return message[:200] if message else "(詳細不明)"
+    except Exception:
+        return "(詳細不明)"
+
+
 def _call_gemini_api(prompt, api_key, model, max_retries=3):
     """
     Gemini APIを呼び出し、応答テキストを返す。失敗時はNoneを返す。
@@ -358,8 +379,18 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
                 url, json=_build_payload(prompt, with_schema), timeout=GEMINI_TIMEOUT_SEC
             )
             if resp.status_code == 429:
+                if attempt >= max_retries:
+                    # 最後の試行では待っても再試行しないので、待たずに打ち切る
+                    print(
+                        f"[judge_translate] Gemini 429(レート制限)。再試行回数を使い切りました "
+                        f"({attempt}/{max_retries})。超過した制限: {_quota_reason(resp)}"
+                    )
+                    break
                 wait = _gemini_retry_delay(resp, attempt)
-                print(f"[judge_translate] Gemini 429(レート制限)。{wait:.0f}秒待って再試行します ({attempt}/{max_retries})")
+                print(
+                    f"[judge_translate] Gemini 429(レート制限)。{wait:.0f}秒待って再試行します "
+                    f"({attempt}/{max_retries})。超過した制限: {_quota_reason(resp)}"
+                )
                 time.sleep(wait)
                 continue
             if resp.status_code == 400 and with_schema:
