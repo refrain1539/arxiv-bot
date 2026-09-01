@@ -16,7 +16,14 @@ name: daily-arxiv
 
 on:
   schedule:
-    - cron: '30 2 * * *'   # 11:30 JST。arXiv の announce (20:00 ET) の後になるよう設定
+    # GitHub Actions の schedule は遅延・スキップが起こる(公式に保証されていない)。
+    # このリポジトリでは 2026-08-26 以降、30分程度だった遅延が 2〜8時間に悪化した。
+    # そこで起動の機会を3つ用意し、最初に発火したものが処理する。
+    # 2回目以降は seen_ids により新着0件となり、Gemini も呼ばずに数十秒で終わるため、
+    # 追加コストはほぼ無い(public リポジトリなので Actions の実行時間も無料)。
+    - cron: '30 2 * * *'   # 11:30 JST(本命)。arXiv の announce (20:00 ET) の後になるよう設定
+    - cron: '30 4 * * *'   # 13:30 JST(予備1)
+    - cron: '30 6 * * *'   # 15:30 JST(予備2)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -27,6 +34,13 @@ on:
 permissions:
   contents: write   # data/ 配下の状態ファイルをcommitするため
   issues: write      # Issueの作成・closeのため
+
+# 遅延した本命の実行と予備の実行が重なると、同じ論文を2回通知してしまう。
+# 同時に走るのは常に1つだけにする。待たされた実行は、先の実行が seen_ids を
+# 更新し終えてからチェックアウトするため、新着0件になって何もしない。
+concurrency:
+  group: daily-arxiv
+  cancel-in-progress: false
 
 jobs:
   run-bot:
