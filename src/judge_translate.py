@@ -322,7 +322,7 @@ def _build_payload(prompt, with_schema):
     }
 
 
-def _gemini_retry_delay(resp, attempt):
+def gemini_retry_delay(resp, attempt):
     """
     429 のときに待つ秒数を決める。
 
@@ -343,7 +343,7 @@ def _gemini_retry_delay(resp, attempt):
     return min(GEMINI_RETRY_BASE_WAIT_SEC * attempt, GEMINI_MAX_RETRY_WAIT_SEC)
 
 
-def _quota_reason(resp):
+def gemini_quota_reason(resp):
     """
     429 応答から、どの制限に当たったのか(1分あたりか、1日あたりか)を読み取る。
     RPM なら待てば回復するが、RPD(1日あたり)なら翌日まで回復しないため、
@@ -383,13 +383,13 @@ def _call_gemini_api(prompt, api_key, model, max_retries=3):
                     # 最後の試行では待っても再試行しないので、待たずに打ち切る
                     print(
                         f"[judge_translate] Gemini 429(レート制限)。再試行回数を使い切りました "
-                        f"({attempt}/{max_retries})。超過した制限: {_quota_reason(resp)}"
+                        f"({attempt}/{max_retries})。超過した制限: {gemini_quota_reason(resp)}"
                     )
                     break
-                wait = _gemini_retry_delay(resp, attempt)
+                wait = gemini_retry_delay(resp, attempt)
                 print(
                     f"[judge_translate] Gemini 429(レート制限)。{wait:.0f}秒待って再試行します "
-                    f"({attempt}/{max_retries})。超過した制限: {_quota_reason(resp)}"
+                    f"({attempt}/{max_retries})。超過した制限: {gemini_quota_reason(resp)}"
                 )
                 time.sleep(wait)
                 continue

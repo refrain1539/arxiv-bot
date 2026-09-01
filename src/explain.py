@@ -29,6 +29,7 @@ import time
 import requests
 
 from arxiv_fetch import ARXIV_API_URL, _parse_atom
+from judge_translate import gemini_quota_reason, gemini_retry_delay
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROFILE_PATH = os.path.join(BASE_DIR, "data", "my_profile.md")
@@ -42,6 +43,8 @@ MAX_PDF_BYTES = 8 * 1024 * 1024
 
 MAX_RETRIES = 3
 GEMINI_TIMEOUT_SEC = 600
+# 503 などサーバー側の一時的な不調に対する待ち時間(attempt 倍で伸ばす)
+SERVER_ERROR_WAIT_SEC = 20
 PDF_TIMEOUT_SEC = 180
 
 PROMPT_TEMPLATE = """あなたは素粒子論(hep-th)の研究者向けに、論文の解説書を書く専門家です。
@@ -294,20 +297,43 @@ def _call_gemini(parts, api_key, model):
         try:
             resp = requests.post(url, json=payload, timeout=GEMINI_TIMEOUT_SEC)
             if resp.status_code == 429:
-                wait = 2 ** attempt
-                print(f"[explain] Gemini 429(レート制限)。{wait}秒待って再試行します ({attempt}/{MAX_RETRIES})")
+                if attempt >= MAX_RETRIES:
+                    print(
+                        f"[explain] Gemini 429(レート制限)。再試行回数を使い切りました "
+                        f"({attempt}/{MAX_RETRIES})。超過した制限: {gemini_quota_reason(resp)}"
+                    )
+                    break
+                # 無料枠の制限はRPM(1分あたり)なので、2/4/8秒では枠が戻らない。
+                # judge_translate と同じ方針(retryDelayを優先、無ければ30/60/90秒)にする。
+                wait = gemini_retry_delay(resp, attempt)
+                print(
+                    f"[explain] Gemini 429(レート制限)。{wait:.0f}秒待って再試行します "
+                    f"({attempt}/{MAX_RETRIES})。超過した制限: {gemini_quota_reason(resp)}"
+                )
                 time.sleep(wait)
                 continue
             if resp.status_code == 400:
                 # リクエストが大きすぎる・PDFを受け付けない等。再試行しても直らない
                 print(f"[explain] Gemini が 400 を返しました: {resp.text[:300]}")
                 return None, "permanent"
+            if resp.status_code >= 500:
+                # 503 などのサーバー側の一時的な不調。少し長めに待って再試行する
+                if attempt >= MAX_RETRIES:
+                    print(f"[explain] Gemini が {resp.status_code} を返し続けました")
+                    break
+                wait = SERVER_ERROR_WAIT_SEC * attempt
+                print(
+                    f"[explain] Gemini が {resp.status_code} を返しました。"
+                    f"{wait}秒待って再試行します ({attempt}/{MAX_RETRIES})"
+                )
+                time.sleep(wait)
+                continue
             resp.raise_for_status()
             return resp.json()["candidates"][0]["content"]["parts"][0]["text"], None
         except Exception as e:
             print(f"[explain] Gemini 呼び出し失敗 (試行{attempt}/{MAX_RETRIES}): {e}")
             if attempt < MAX_RETRIES:
-                time.sleep(2 ** attempt)
+                time.sleep(SERVER_ERROR_WAIT_SEC * attempt)
 
     return None, "transient"
 

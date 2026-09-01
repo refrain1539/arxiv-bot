@@ -24,7 +24,7 @@ import judge_translate  # noqa: E402
 import main  # noqa: E402
 from judge_translate import (  # noqa: E402
     DEFAULT_JUDGEMENT,
-    _gemini_retry_delay,
+    gemini_retry_delay,
     judge_and_translate_papers,
 )
 
@@ -106,23 +106,23 @@ class TestGeminiRetryDelay(unittest.TestCase):
             status_code=429,
             json_data={"error": {"details": [{"retryDelay": "42s"}]}},
         )
-        self.assertEqual(_gemini_retry_delay(resp, 1), 42.0)
+        self.assertEqual(gemini_retry_delay(resp, 1), 42.0)
 
     def test_falls_back_to_minute_scale_backoff(self):
         """RPM制限なので、2/4/8秒のような短い待機では枠が戻らない。"""
         resp = FakeResponse(status_code=429)
-        self.assertEqual(_gemini_retry_delay(resp, 1), 30)
-        self.assertEqual(_gemini_retry_delay(resp, 2), 60)
-        self.assertEqual(_gemini_retry_delay(resp, 3), 90)
+        self.assertEqual(gemini_retry_delay(resp, 1), 30)
+        self.assertEqual(gemini_retry_delay(resp, 2), 60)
+        self.assertEqual(gemini_retry_delay(resp, 3), 90)
 
     def test_caps_the_wait(self):
         resp = FakeResponse(
             status_code=429, json_data={"error": {"details": [{"retryDelay": "9999s"}]}}
         )
-        self.assertEqual(_gemini_retry_delay(resp, 1), judge_translate.GEMINI_MAX_RETRY_WAIT_SEC)
+        self.assertEqual(gemini_retry_delay(resp, 1), judge_translate.GEMINI_MAX_RETRY_WAIT_SEC)
 
     def test_broken_body_does_not_raise(self):
-        self.assertGreater(_gemini_retry_delay(FakeResponse(status_code=429), 1), 0)
+        self.assertGreater(gemini_retry_delay(FakeResponse(status_code=429), 1), 0)
 
 
 class TestSeenIdsSkipsFailedPapers(unittest.TestCase):

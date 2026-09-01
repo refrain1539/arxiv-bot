@@ -243,6 +243,66 @@ class TestGenerateExplanation(unittest.TestCase):
         self.assertEqual(error, "transient")
         self.assertEqual(post.call_count, explain.MAX_RETRIES)
 
+    def test_gemini_429_waits_on_a_minute_scale(self):
+        """
+        無料枠の制限はRPM(1分あたり)なので、2/4/8秒では枠が戻らない。
+        judge_translate と同じ待ち方になっていること。
+        """
+        sleep = mock.Mock()
+        post = mock.Mock(return_value=FakeResponse(status_code=429))
+        with mock.patch.object(explain, "fetch_paper_meta", lambda _id: PAPER), mock.patch.object(
+            explain.requests, "get", mock.Mock(return_value=FakeResponse(content=b"pdf"))
+        ), mock.patch.object(explain.requests, "post", post), mock.patch.object(
+            explain.time, "sleep", sleep
+        ):
+            generate_explanation("2608.01234", "key")
+
+        waits = [c.args[0] for c in sleep.call_args_list]
+        self.assertEqual(waits, [30, 60])   # 3回目は待たずに打ち切る
+
+    def test_gemini_429_honours_retry_delay_from_body(self):
+        sleep = mock.Mock()
+        post = mock.Mock(
+            return_value=FakeResponse(
+                status_code=429, json_data={"error": {"details": [{"retryDelay": "45s"}]}}
+            )
+        )
+        with mock.patch.object(explain, "fetch_paper_meta", lambda _id: PAPER), mock.patch.object(
+            explain.requests, "get", mock.Mock(return_value=FakeResponse(content=b"pdf"))
+        ), mock.patch.object(explain.requests, "post", post), mock.patch.object(
+            explain.time, "sleep", sleep
+        ):
+            generate_explanation("2608.01234", "key")
+
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [45.0, 45.0])
+
+    def test_gemini_503_is_retried_as_transient(self):
+        """503 はサーバー側の一時的な不調なので、再試行して transient で返す。"""
+        sleep = mock.Mock()
+        post = mock.Mock(return_value=FakeResponse(status_code=503))
+        with mock.patch.object(explain, "fetch_paper_meta", lambda _id: PAPER), mock.patch.object(
+            explain.requests, "get", mock.Mock(return_value=FakeResponse(content=b"pdf"))
+        ), mock.patch.object(explain.requests, "post", post), mock.patch.object(
+            explain.time, "sleep", sleep
+        ):
+            page, error = generate_explanation("2608.01234", "key")
+
+        self.assertEqual(error, "transient")
+        self.assertEqual(post.call_count, explain.MAX_RETRIES)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [20, 40])
+
+    def test_gemini_503_then_success(self):
+        responses = [FakeResponse(status_code=503), _gemini_response("<h2>x</h2>")]
+        with mock.patch.object(explain, "fetch_paper_meta", lambda _id: PAPER), mock.patch.object(
+            explain.requests, "get", mock.Mock(return_value=FakeResponse(content=b"pdf"))
+        ), mock.patch.object(
+            explain.requests, "post", mock.Mock(side_effect=responses)
+        ), mock.patch.object(explain.time, "sleep", mock.Mock()):
+            page, error = generate_explanation("2608.01234", "key")
+
+        self.assertIsNone(error)
+        self.assertIn("<h2>x</h2>", page)
+
     def test_works_when_metadata_lookup_fails(self):
         """メタデータが引けなくても、タイトルさえ渡されば生成は続く。"""
         with mock.patch.object(explain, "fetch_paper_meta", lambda _id: None), mock.patch.object(
