@@ -178,5 +178,101 @@
     "title": "Bekenstein--Hod Bound: A $3.3σ$ Confirmation from GW250114",
     "verdict": "dislike",
     "date": "2026-09-01"
+  },
+  {
+    "arxiv_id": "2608.29816",
+    "title": "BMN Spread Complexity Across Phase Transitions",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.29627",
+    "title": "Genuine Multi-Entropy in Abelian Chern--Simons Theory: Exact Key-Ring Collapse and Its Breakdown for Generic Link States",
+    "verdict": "like",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.29329",
+    "title": "Inequalities and Positivity in Modular Flowed Entanglement Entropy",
+    "verdict": "like",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.29686",
+    "title": "Latent Geometry and the Emergence of Lorentzian Time in Matrix Quantum Mechanics",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.29594",
+    "title": "Higher-Spin dS/CFT beyond minimal type-A, and the doubled nature of de Sitter space",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.28789",
+    "title": "Acceleration and Rotation in Three Dimensions",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.28755",
+    "title": "A Quasi-local Entropy for Black Hole Space-times",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2608.29806",
+    "title": "Two Languages for the Same Resonance: From Nuclear Decay to Black-Hole Ringdown",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.00126",
+    "title": "Quantum Complexity Dynamics for Disjoint Subsystems",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.00942",
+    "title": "Fuchsian Resonance and a Horizon-to-Boundary Dictionary for Pole-Skipping",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.01039",
+    "title": "Logarithmic corrections to the entropy for near-extremal rotating black holes",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.01332",
+    "title": "Perturbative Double-Scalar Hair on Planar Black Holes in AdS$_{4}$ Einstein-Scalar Gravity",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.00573",
+    "title": "Performance of quantum imaginarity in black hole spacetime",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.00423",
+    "title": "Positive energy from timelike singularities",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.00150",
+    "title": "On the mass spectrum of Viel-dreibein gravity",
+    "verdict": "dislike",
+    "date": "2026-09-02"
+  },
+  {
+    "arxiv_id": "2609.00131",
+    "title": "A 1/4-BPS chiral algebra in D1D5: from charge concentration to BPS chaos",
+    "verdict": "dislike",
+    "date": "2026-09-02"
   }
 ]
