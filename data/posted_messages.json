@@ -191,5 +191,53 @@
     "channel_id": "1543485984476495902",
     "date": "2026-09-01",
     "title": "Two Languages for the Same Resonance: From Nuclear Decay to Black-Hole Ringdown"
+  },
+  "2609.00126": {
+    "message_id": "1544570354243076167",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "Quantum Complexity Dynamics for Disjoint Subsystems"
+  },
+  "2609.00942": {
+    "message_id": "1544570363999031427",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "Fuchsian Resonance and a Horizon-to-Boundary Dictionary for Pole-Skipping"
+  },
+  "2609.01039": {
+    "message_id": "1544570374375735407",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "Logarithmic corrections to the entropy for near-extremal rotating black holes"
+  },
+  "2609.01332": {
+    "message_id": "1544570383360069723",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "Perturbative Double-Scalar Hair on Planar Black Holes in AdS$_{4}$ Einstein-Scalar Gravity"
+  },
+  "2609.00573": {
+    "message_id": "1544570394055409665",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "Performance of quantum imaginarity in black hole spacetime"
+  },
+  "2609.00423": {
+    "message_id": "1544570403647787050",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "Positive energy from timelike singularities"
+  },
+  "2609.00150": {
+    "message_id": "1544570412959014965",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "On the mass spectrum of Viel-dreibein gravity"
+  },
+  "2609.00131": {
+    "message_id": "1544570422669090847",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-02",
+    "title": "A 1/4-BPS chiral algebra in D1D5: from charge concentration to BPS chaos"
   }
 }
