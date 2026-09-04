@@ -287,5 +287,53 @@
     "reactions_done": [
       "dislike"
     ]
+  },
+  "2609.04016": {
+    "message_id": "1545296856471306361",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Quasi-local form for $α$--$z$ Rényi QNEC from fixed-ray escorts"
+  },
+  "2609.04137": {
+    "message_id": "1545296869448482868",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Boundary conditions for axionic wormholes, imaginary distance bound and KSW allowability"
+  },
+  "2609.04104": {
+    "message_id": "1545296877723975681",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Gravitationally Induced Entanglement Across an Event Horizon"
+  },
+  "2609.04191": {
+    "message_id": "1545296884535402498",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Baby-universe state dependence of the wormhole-induced gravi-axion mass gap"
+  },
+  "2609.04041": {
+    "message_id": "1545296893377118279",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Cutting corners: exciting and magical bounds from the cusp bootstrap"
+  },
+  "2609.04035": {
+    "message_id": "1545296903472939109",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Cusped Defects: Cusp Operator Expansion, Conformal Properties and Bootstrap Applications"
+  },
+  "2609.04107": {
+    "message_id": "1545296910720565279",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "The growth of $SO(9)$ super-representations in Type II string theory"
+  },
+  "2609.04114": {
+    "message_id": "1545296919138664479",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Real-Time String Dynamics in $3+1$D Lattice Quantum Electrodynamics"
   }
 }
