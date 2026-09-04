@@ -335,5 +335,53 @@
     "channel_id": "1543485984476495902",
     "date": "2026-09-04",
     "title": "Real-Time String Dynamics in $3+1$D Lattice Quantum Electrodynamics"
+  },
+  "2609.03053": {
+    "message_id": "1545347504361439243",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Multi-Boundary Many-Body Quantum Teleportation"
+  },
+  "2609.01706": {
+    "message_id": "1545347513849090083",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Holographic algebras at null infinity"
+  },
+  "2609.02814": {
+    "message_id": "1545347526058582027",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Scale-separated AdS$_2$ flux vacua from type II"
+  },
+  "2609.01986": {
+    "message_id": "1545347537626603571",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Pre-Strings Lectures on Holographic Correlators and Analytic Bootstrap"
+  },
+  "2609.03347": {
+    "message_id": "1545347549370654731",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Conical Defects in JT Gravity from BF Theory: Quantization, Fusion, and Weighted Moduli Spaces"
+  },
+  "2609.03289": {
+    "message_id": "1545347556635181147",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Symmetry-breaking line defects embedded to a 3D $O(N)$ critical bulk"
+  },
+  "2609.03126": {
+    "message_id": "1545347564868472923",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "Boundary-Value Problem in Type IIB Supergravity and Holography"
+  },
+  "2609.03013": {
+    "message_id": "1545347572980260945",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-04",
+    "title": "From $Z$ to $a$: High-temperature relations, subleading semi-universality, and conformal anomalies"
   }
 }
