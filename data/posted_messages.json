@@ -427,5 +427,35 @@
     "reactions_done": [
       "dislike"
     ]
+  },
+  "2609.03477": {
+    "message_id": "1545672952425611285",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-05",
+    "title": "Dynamical Selection of Horizon-BMS Goldstone Modes in Evaporating Black Holes"
+  },
+  "2609.03683": {
+    "message_id": "1545672961292509325",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-05",
+    "title": "Long-lived ringing of Bronnikov--Kim brane-world black holes and wormholes"
+  },
+  "2609.03409": {
+    "message_id": "1545672968158318685",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-05",
+    "title": "An interpretation-independent formulation of the measurement problem"
+  },
+  "2609.03530": {
+    "message_id": "1545672976219766867",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-05",
+    "title": "Topics in Kadyshevsky Field Theory"
+  },
+  "2609.03525": {
+    "message_id": "1545673096638369864",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-05",
+    "title": "Center-twisted Gribov spectra and the finite-volume Gaussian response in the refined Gribov--Zwanziger framework"
   }
 }
