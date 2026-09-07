@@ -457,5 +457,53 @@
     "channel_id": "1543485984476495902",
     "date": "2026-09-05",
     "title": "Center-twisted Gribov spectra and the finite-volume Gaussian response in the refined Gribov--Zwanziger framework"
+  },
+  "2609.05164": {
+    "message_id": "1546384056265089105",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "The endless journey towards the horizon of a quantum black hole"
+  },
+  "2609.04331": {
+    "message_id": "1546384066180423701",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "Boundary-Boundary Duality on Regular Black Holes, Supersymmetric Solitons and Holographic Spinning Plasma Disks"
+  },
+  "2609.05409": {
+    "message_id": "1546384074451714140",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "Decompactification and the Flat-Space Limit of AdS$_5\\times$ S$^5$ Master Correlators"
+  },
+  "2609.05336": {
+    "message_id": "1546384082752110673",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "Infrared Memory and Scrambling in a Dynamically Opened Coupled-SYK Majorana Junction"
+  },
+  "2609.05004": {
+    "message_id": "1546384090402660406",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "de Sitter and S-folds in type IIB from $\\mathcal{N} = 4$ $D = 4$ gauged supergravity"
+  },
+  "2609.05211": {
+    "message_id": "1546384099739177102",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "CFT characters from localization"
+  },
+  "2609.04844": {
+    "message_id": "1546384109108990034",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "What is Classical Null String Theory?"
+  },
+  "2609.04621": {
+    "message_id": "1546384117350801440",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-07",
+    "title": "Open-Closed-Open Triality for 1/2 BPS Three-Point Functions"
   }
 }
