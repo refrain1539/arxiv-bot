@@ -505,5 +505,53 @@
     "channel_id": "1543485984476495902",
     "date": "2026-09-07",
     "title": "Open-Closed-Open Triality for 1/2 BPS Three-Point Functions"
+  },
+  "2609.07866": {
+    "message_id": "1547109974444867667",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Entanglement Wedge Reconstruction Beyond the Large N Limit via the Twirled Petz Map"
+  },
+  "2609.07801": {
+    "message_id": "1547109982011527189",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Logarithmic correction to the entropy of near-extremal higher-curvature black holes"
+  },
+  "2609.08052": {
+    "message_id": "1547109991738114110",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Fortuitous ABJM Operators as Black Holes"
+  },
+  "2609.07928": {
+    "message_id": "1547110006468386837",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Wilson loops, M2-branes and strings"
+  },
+  "2609.07846": {
+    "message_id": "1547110016035856405",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Double Copy from the Flipped Null String"
+  },
+  "2609.07514": {
+    "message_id": "1547110024638365727",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Can one hear the shape of a black hole singularity?"
+  },
+  "2609.06363": {
+    "message_id": "1547110033857323010",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Finite stress-tensor moment tomography of boundary-graviton coherences"
+  },
+  "2609.07828": {
+    "message_id": "1547110043487305769",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-09",
+    "title": "Unitary quantum conformal Bondi-Metzner-Sachs field theories"
   }
 }
