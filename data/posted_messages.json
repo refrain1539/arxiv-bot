@@ -553,5 +553,53 @@
     "channel_id": "1543485984476495902",
     "date": "2026-09-09",
     "title": "Unitary quantum conformal Bondi-Metzner-Sachs field theories"
+  },
+  "2609.09303": {
+    "message_id": "1547471505636597782",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "One-point functions of the Lagrangian in $\\mathcal{N}=4$ SYM with boundaries, defects and interfaces"
+  },
+  "2609.10027": {
+    "message_id": "1547471515497271327",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "Entanglement Entropy of Interacting Scalar Theories on Fuzzy Spaces"
+  },
+  "2609.10432": {
+    "message_id": "1547471525450358866",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "Null String Holography, Null Strings Probe Projective Boundary of Their Target Spaces"
+  },
+  "2609.09283": {
+    "message_id": "1547471535294521407",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "Gravitational quantum friction and the information-loss problem"
+  },
+  "2609.10459": {
+    "message_id": "1547471544756871264",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "Anomalies at the End of the Universe?"
+  },
+  "2609.09954": {
+    "message_id": "1547471555183775807",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "The Geometry of Gravitational Radiation"
+  },
+  "2609.09613": {
+    "message_id": "1547471565111820319",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "Probing quantum chaos near a wormhole throat with a circular string"
+  },
+  "2609.10329": {
+    "message_id": "1547471574758858814",
+    "channel_id": "1543485984476495902",
+    "date": "2026-09-10",
+    "title": "An Effective $S$-Matrix Approach to Low-Frequency Waveforms from Black Hole Mergers"
   }
 }
