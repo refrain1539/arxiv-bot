@@ -1,0 +1,14 @@
+[Unit]
+Description=Collect arXiv Discord reactions every fifteen minutes (Asia/Tokyo)
+
+[Timer]
+OnCalendar=*-*-* 10..23:07,22,37,52:00 Asia/Tokyo
+OnCalendar=*-*-* 00,01:07,22,37,52:00 Asia/Tokyo
+AccuracySec=1min
+RandomizedDelaySec=0
+Persistent=false
+Unit=research-bots-arxiv-reactions.service
+
+[Install]
+WantedBy=timers.target
+

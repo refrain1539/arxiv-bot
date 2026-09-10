@@ -1,0 +1,16 @@
+[Unit]
+Description=Collect Discord reactions and generate requested arXiv explainers
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=seiya
+Group=seiya
+WorkingDirectory=/home/seiya/services/arxiv-bot
+EnvironmentFile=/home/seiya/.config/research-bots/arxiv.env
+ExecStart=/usr/bin/flock -w 900 /home/seiya/services/arxiv-bot/.run/bot.lock /home/seiya/services/arxiv-bot/.venv/bin/python /home/seiya/services/arxiv-bot/src/reactions.py
+TimeoutStartSec=50min
+NoNewPrivileges=true
+PrivateTmp=true
+
