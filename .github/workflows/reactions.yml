@@ -1,5 +1,9 @@
 name: discord-reactions
 
+# 本番の定期実行は Ubuntu の research-bots-arxiv-reactions.timer へ移行済み。
+# workflow_dispatch は障害復旧・DRY_RUN確認専用として残す。本番の手動実行は
+# Ubuntu 側の systemd service を使い、GitHub Actions からは行わない。
+
 # 日中に15分おきで、Discord に押されたリアクションを回収するワークフロー。
 # 毎朝の daily.yml とは独立しており、通知そのものは行わない。
 #   👍 → feedback.json に verdict="like"
@@ -16,8 +20,6 @@ name: discord-reactions
 # feedback.json / posted_messages.json を書き換えず、ログ出力のみで動作確認できます。
 
 on:
-  schedule:
-    - cron: '7,22,37,52 1-16 * * *'   # 10:00〜翌02:00 JST の間、15分おき
   workflow_dispatch:
     inputs:
       dry_run:

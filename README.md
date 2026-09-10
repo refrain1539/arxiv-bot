@@ -1,10 +1,15 @@
 # arxiv-bot
 
-毎日11:30 JST(GitHub Actionsの仕様上、数十分遅延することがあります)に arXiv の新着論文(hep-th中心)を取得し、
-Gemini APIで興味に合うものだけを選別・日本語訳し、Discordで通知するBotです。11:30 JSTなのは、
-arXivが20:00 ETにannounceし、それがJSTの09:00(夏)/10:00(冬)にあたるため、この時刻ならその朝の分を
-当日中に拾えるからです。
+Ubuntuのsystemd timerで毎日09:23, 10:23, 12:23, 14:23, 16:23 JSTに arXiv の新着論文(hep-th中心)を取得し、
+Gemini APIで興味に合うものだけを選別・日本語訳してDiscordへ通知するBotです。
 金銭コストはかかりません(すべて無料枠の範囲で動作します)。
+
+## 本番運用
+
+定期実行と本番の手動実行はUbuntuのsystemd service/timerで行う。GitHub Actionsの
+workflow_dispatchは障害復旧・DRY_RUN確認用に残しているが、移行後の本番手動実行には
+使用しない。運用コマンドと更新・復元手順は
+[`docs/ubuntu-operation.md`](docs/ubuntu-operation.md)を参照。
 
 ## できること
 
@@ -76,7 +81,7 @@ Discordには出ませんが、GitHub Issueには(`ignore`以外)常に記録さ
 
 - 1論文 = 1メッセージ = 1embedで投稿されます
 - 投稿後、Bot自身がそのメッセージに📖👍👎の3つのリアクションを付けます
-- 👍/👎を押すと、`.github/workflows/reactions.yml`(10:00〜翌02:00 JSTの間、15分おきに実行)
+- 👍/👎を押すと、`research-bots-arxiv-reactions.timer`(10:07〜23:52、および翌00:07〜01:52 JSTの間、15分おきに実行)
   がそれを回収して`data/feedback.json`に記録し、翌日以降のGemini判定に反映されます
 - 📖を押すと、その論文のPDF全文をGeminiに渡して解説書(HTML)を生成し、元のメッセージへの
   返信としてファイル添付で返します
@@ -123,8 +128,8 @@ Discord Botの作成・招待・チャンネルID取得・GitHub Secretsへの�
 
 ### 6. 動作確認
 
-リポジトリの「Actions」タブ → 「daily-arxiv」→「Run workflow」で手動実行できます。
-初回は `dry_run: true` を指定すると、通知やIssue作成・状態ファイルの保存を行わずログだけで動作確認できます。
+初回確認と本番手動実行はUbuntuのsystemd serviceを通して行う。GitHub Actionsの
+workflow_dispatchは障害復旧・DRY_RUN確認専用であり、通常の本番起動には使わない。
 
 ## よくあるエラーと対処
 
@@ -139,17 +144,16 @@ Discord Botの作成・招待・チャンネルID取得・GitHub Secretsへの�
 - **Discordで401 Unauthorized**: `DISCORD_BOT_TOKEN` が誤っているか失効しています。Developer Portalの「Bot」画面で「Reset Token」を行い、新しいTokenをGitHub Secretsに登録し直してください。
 - **Discordで403 Forbidden**: Botに必要な権限(View Channel / Send Messages / Read Message History / Add Reactions)が付与されていないか、Botがそのチャンネルにアクセスできません。`docs/discord.md` の招待手順をやり直すか、チャンネルの権限設定を確認してください。
 - **Discordで404 Not Found**: `DISCORD_CHANNEL_ID` が誤っています。`docs/discord.md` の手順でチャンネルIDを取り直し、Secretsを更新してください。
-- **`git push`で失敗する**: ワークフローの `permissions: contents: write` が設定されているか確認してください(このリポジトリでは設定済みです)。組織のリポジトリルールでActionsのpushが制限されている場合は、リポジトリ設定を見直してください。
-- **Issueが作成されない / closeされない**: `permissions: issues: write` が必要です(設定済み)。それでも失敗する場合はActionsのログを確認してください。
-- **スケジュール実行が11:30 JSTちょうどに来ない**: GitHub Actionsの `schedule` は仕様上、数十分〜1時間程度遅延することがあります。仕様であり、Bot側の不具合ではありません。
+- **Issueが作成されない / closeされない**: `arxiv.env` の `GITHUB_TOKEN` に対象リポジトリのIssues読書き権限があるか、journalのログを確認してください。
+- **timerが動かない**: `systemctl list-timers --all 'research-bots-*'` と `journalctl -u research-bots-arxiv-daily.service` を確認してください。
 
 ## ディレクトリ構成
 
 ```
 arxiv-bot/
 ├── .github/workflows/
-│   ├── daily.yml                 # 毎日11:30 JSTの定期実行ワークフロー
-│   └── reactions.yml             # Discordのリアクションを15分おきに回収するワークフロー
+│   ├── daily.yml                 # 障害復旧・DRY_RUN用の手動workflow
+│   └── reactions.yml             # 障害復旧・DRY_RUN用の手動workflow
 ├── src/
 │   ├── main.py                   # エントリポイント
 │   ├── arxiv_fetch.py            # arXiv API から新着取得・著者ウォッチリスト照合
